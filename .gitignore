@@ -1,0 +1,73 @@
+# ESPHome specific
+*.bin
+*.elf
+*.map
+.esphome/
+esphome.json
+secrets.yaml
+
+# Build artifacts
+build/
+.build/
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+.clang_complete
+.gcc-flags.json
+compile_commands.json
+
+# Logs
+*.log
+logs/
+
+# Secrets and sensitive data
+secrets/
+*.secret
+*.key
+*.pem
+*.crt
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Node.js (if using web components)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# Project specific
+context/
