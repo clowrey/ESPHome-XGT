@@ -1,0 +1,170 @@
+esphome:
+  name: esphome-xgt
+  friendly_name: esphome-xgt
+
+  on_boot:
+    then:
+      # Turn on backlight and power to neopixel
+      - output.turn_on: backlight_output
+      - output.turn_on: neopixel_power
+
+esp32:
+  board: lolin_s3_mini
+  variant: esp32s3
+  flash_size: 4MB
+  framework:
+    type: esp-idf
+
+# Enable PSRAM
+psram:
+
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "esphome-xgt"
+    password: "CdINYGmOKweJ"
+
+captive_portal:
+
+# Buttons
+binary_sensor:
+
+  - platform: gpio
+    name: "Button - Left"
+    pin:
+      number: GPIO0
+      inverted: true
+      mode:
+          input: true
+          pullup: true
+
+  - platform: gpio
+    name: "Button - Middle"
+    pin:
+      number: GPIO47
+      inverted: true
+      mode:
+          input: true
+          pullup: true
+
+          
+  - platform: gpio
+    name: "Button - Right"
+    pin:
+      number: GPIO48
+      inverted: true
+      mode:
+          input: true
+          pullup: true
+    
+# WS2812 LED
+# PIN GPIO07 needs to be HIGH so it gets power
+
+
+# Backlight and WS2812 Power Supply
+output:
+  - platform: gpio
+    pin: GPIO07
+    id: neopixel_power
+  - platform: gpio
+    pin: GPIO33
+    id: backlight_output
+
+spi:
+  clk_pin: GPIO40
+  mosi_pin: GPIO38
+
+display:
+  - platform: ili9xxx
+    id: disp
+    dimensions:
+      height: 128
+      width: 128
+      offset_height: 1
+      offset_width: 2
+    model: st7789v
+    data_rate: 80MHz
+    cs_pin: GPIO35
+    dc_pin: GPIO36
+    reset_pin: GPIO34
+    invert_colors: true
+    transform:
+      mirror_x: true
+      mirror_y: true
+    update_interval: never
+    auto_clear_enabled: false
+
+lvgl:
+    log_level: INFO
+    color_depth: 16
+    bg_color: 0
+    border_width: 0
+    outline_width: 0
+    #shadow_width: 0
+    text_font: unscii_16
+    align: center
+    style_definitions:
+      - id: font_style
+        text_font: MONTSERRAT_12
+        #text_font: unscii_16
+        align: center
+        text_color: 0xFFFFFF
+        #bg_opa: cover
+        bg_opa: TRANSP
+        bg_color: 0
+        radius: 4
+        pad_all: 2 
+      - id: details_style
+        text_font: MONTSERRAT_16
+        align: center
+        text_color: 0xFFFFFF
+        #bg_opa: cover
+        bg_opa: TRANSP
+        bg_color: 0
+        radius: 4
+        pad_all: 2 
+    page_wrap: true
+    pages:
+      - id: main_page
+        widgets:
+          - obj: # Meter
+              height: 128 # needed to be explicitily defined for my round display to not have weird border line overlapping gauge
+              width: 128
+              align: center
+              bg_color: 0
+              #bg_opa: TRANSP
+              border_width: 0
+              outline_width: 0
+              #shadow_width: 0
+              pad_all: 0
+              scrollbar_mode: "off"
+              #clip_corner: true
+              #radius: 120
+              widgets:
+                - label:
+                    styles: font_style
+                    #text_font: MONTSERRAT_32 # override font size
+                    id: label_battery_soc
+                    y: -38
+                    x: 0 #positive = to the right of center
+                - label:
+                    styles: font_style
+                    id: label_house_power
+                    text_color: 0xffffff
+                    y: -6 #positive = below center
+                    x: 0 #positive = to the right of center
+    
