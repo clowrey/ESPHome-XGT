@@ -15,13 +15,12 @@ esp32:
   framework:
     type: esp-idf
 
-# Enable PSRAM
 psram:
 
 logger:
 
-# Enable Home Assistant API
 api:
+  reboot_timeout: 0s #disable auto 15min reboot with no HA connection
   encryption:
     key: !secret api_encryption_key
 
@@ -30,13 +29,14 @@ ota:
     password: !secret ota_password
 
 wifi:
+  reboot_timeout: 0s #disable reboot if no wifi - Defaults to 15min. Does not apply when in access point mode.
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
-  # Enable fallback hotspot (captive portal) in case wifi connection fails
-  ap:
+  
+  ap: # Enable fallback hotspot (captive portal) in case wifi connection fails
     ssid: "esphome-xgt"
-    password: "CdINYGmOKweJ"
+    password: "password"
 
 captive_portal:
 
@@ -102,9 +102,9 @@ display:
     dc_pin: GPIO36
     reset_pin: GPIO34
     invert_colors: true
-    transform:
-      mirror_x: true
-      mirror_y: true
+    #transform:
+    #  mirror_x: true
+    #  mirror_y: true
     update_interval: never
     auto_clear_enabled: false
 
