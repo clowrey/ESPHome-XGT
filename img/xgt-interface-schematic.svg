@@ -131,7 +131,7 @@
   <text x="230" y="110" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666" font-style="italic">
     TX Signal
   </text>
-  <text x="260" y="175" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666" font-style="italic">
+  <text x="230" y="175" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666" font-style="italic">
     RX Signal
   </text>
   <text x="470" y="125" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666" font-style="italic">
