@@ -33,6 +33,14 @@ This component provides comprehensive integration with Makita XGT battery packs 
 ![Wiring Example](img/wiring-example.jpg)
 *Example wiring configuration showing ESP32 connections to XGT battery communication interface*
 
+### XGT Battery Connector Details
+
+![XGT Connector](img/xgt-connector.jpg)
+*XGT battery connector showing white wire (TR data line) and connection points. Ground is obtained from main battery +/- terminals*
+
+![XGT Connector 2](img/xgt-connector2.jpg)
+*Close-up view of XGT connector - white wire carries the bidirectional TR (TX/RX) data signal*
+
 ### Interface Circuit Schematic
 
 The XGT battery communication requires a specific interface circuit to handle the single-wire, bidirectional communication:
