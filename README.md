@@ -37,77 +37,14 @@ This component provides comprehensive integration with Makita XGT battery packs 
 
 The XGT battery communication requires a specific interface circuit to handle the single-wire, bidirectional communication:
 
-```mermaid
-flowchart LR
-    %% ESP32 Pins
-    TX["`**GPIO43**
-    (TX - inverted)`"]
-    RX["`**GPIO44** 
-    (RX - inverted)`"]
-    
-    %% Interface Components
-    R1{"`**R1**
-    ┌─[==]─┐
-    **10kΩ**`"}
-    
-    R2{"`**R2**
-    ┌─[==]─┐
-    **4.7kΩ**`"}
-    
-    R3{"`**R3**
-    ┌─[==]─┐
-    **470Ω**`"}
-    
-    D1{{"`**D1**
-    ──|▷|──
-    **Diode**`"}}
-    
-    %% Connection Points
-    MID(("`**●**
-    Junction`"))
-    
-    %% XGT Battery
-    DATA["`**XGT Data**
-    (Pin)`"]
-    
-    %% Ground Symbols
-    GND_ESP["`**⏚**
-    **ESP32 GND**`"]
-    GND_XGT["`**⏚**
-    **XGT GND**`"]
-    
-    %% Connections with better spacing
-    TX -.-> D1
-    D1 -.-> MID
-    RX -.-> R2
-    R2 -.-> MID
-    RX -.-> R1
-    R1 -.-> GND_ESP
-    MID -.-> R3
-    R3 -.-> DATA
-    GND_ESP -.-> GND_XGT
-    
-    %% Styling
-    classDef pinStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
-    classDef resistorStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
-    classDef diodeStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
-    classDef junctionStyle fill:#000,stroke:#000,stroke-width:3px,color:#fff
-    classDef groundStyle fill:#f1f8e9,stroke:#689f38,stroke-width:2px,color:#000
-    classDef dataStyle fill:#e8f5e8,stroke:#4caf50,stroke-width:2px,color:#000
-    
-    class TX,RX pinStyle
-    class R1,R2,R3 resistorStyle
-    class D1 diodeStyle
-    class MID junctionStyle
-    class GND_ESP,GND_XGT groundStyle
-    class DATA dataStyle
-```
+![Interface Circuit](img/xgt-interface-schematic.svg)
+*Professional schematic showing the complete interface circuit with proper electronic symbols*
 
 **Component Values:**
 - **R1**: 10kΩ (pulldown resistor for RX)
 - **R2**: 4.7kΩ (RX to midpoint)
 - **R3**: 470Ω (midpoint to XGT data line)
-- **D1**: Signal diode (1N4148 or similar)
+- **D1**: Signal diode (1N4148 or 1N60P)
 
 **Circuit Operation:**
 - The 10kΩ pulldown ensures RX reads low when no signal is present
@@ -115,6 +52,37 @@ flowchart LR
 - The diode allows TX to drive the line high while preventing backfeed
 - The 470Ω resistor provides current limiting to the XGT battery data line
 - Both TX and RX pins must be configured as inverted in software
+
+**Text-Only Schematic (for documentation/terminals):**
+
+```
+                          ESP32-S3 Interface Circuit Schematic
+    
+    ESP32-S3                                                     XGT Battery
+    ┌──────────────┐                                            ┌──────────────┐
+    │              │                                            │              │
+    │  GPIO43 (TX) ○───┐                                        │              │
+    │   (inverted) │   │    D1                                  │              │
+    │              │   └───▶├──────┐                            │              │
+    │              │              │                            │              │
+    │              │              ●──────────────┐              │              │
+    │              │              │ Junction    │              │              │
+    │  GPIO44 (RX) ○───┐          │ Point       │              │              │
+    │   (inverted) │   │          │             │              │              │
+    │              │   │   ┌─────┐│      ┌─────┐│              │   Data Pin   │
+    │              │   └───┤ R2  ├┘      │ R3  ├──────────────○  TR (TX/RX)  │
+    │              │       │4.7kΩ│       │470Ω │              │              │
+    │              │       └─────┘       └─────┘              │              │
+    │              │                                           │              │
+    │              │       ┌─────┐                             │              │
+    │              │   ┌───┤ R1  │                             │              │
+    │              │   │   │10kΩ │                             │              │
+    │              │   │   └─────┘                             │              │
+    │              │   │      │                                │              │
+    │         GND  ○───┴──────┴────────────────────────────────○         GND  │
+    │              │                                           │              │
+    └──────────────┘                                           └──────────────┘
+```
 
 ![Protocol Scope Trace](img/scope.png)
 *Oscilloscope trace showing XGT battery communication protocol with proper signal inversion and timing*
