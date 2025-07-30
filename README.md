@@ -40,41 +40,26 @@ The XGT battery communication requires a specific interface circuit to handle th
 ```mermaid
 flowchart LR
     %% ESP32 Pins
-    TX["`**GPIO43**
-    (TX - inverted)`"]
-    RX["`**GPIO44** 
-    (RX - inverted)`"]
+    TX["GPIO43<br/>(TX - inverted)"]
+    RX["GPIO44<br/>(RX - inverted)"]
     
-    %% Interface Components
-    R1{"`**R1**
-    ┌─[==]─┐
-    **10kΩ**`"}
-    
-    R2{"`**R2**
-    ┌─[==]─┐
-    **4.7kΩ**`"}
-    
-    R3{"`**R3**
-    ┌─[==]─┐
-    **470Ω**`"}
-    
-    D1{{"`**D1** ──|▷|── **1N60P** (Schottky)`"}}
+    %% Interface Components  
+    R1{"R1<br/>┌─[==]─┐<br/>10kΩ"}
+    R2{"R2<br/>┌─[==]─┐<br/>4.7kΩ"}
+    R3{"R3<br/>┌─[==]─┐<br/>470Ω"}
+    D1{{"D1<br/>──|▷|──<br/>1N60P<br/>(Schottky)"}}
     
     %% Connection Points
-    MID(("`**●**
-    Junction`"))
+    MID(("●<br/>Junction"))
     
     %% XGT Battery
-    DATA["`**XGT Data**
-    (Pin)`"]
+    DATA["XGT Data<br/>(Pin)"]
     
     %% Ground Symbols
-    GND_ESP["`**⏚**
-    **ESP32 GND**`"]
-    GND_XGT["`**⏚**
-    **XGT GND**`"]
+    GND_ESP["⏚<br/>ESP32 GND"]
+    GND_XGT["⏚<br/>XGT GND"]
     
-    %% Connections with better spacing
+    %% Connections
     TX -.-> D1
     D1 -.-> MID
     RX -.-> R2
@@ -86,12 +71,12 @@ flowchart LR
     GND_ESP -.-> GND_XGT
     
     %% Styling
-    classDef pinStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
-    classDef resistorStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
-    classDef diodeStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
+    classDef pinStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef resistorStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef diodeStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px
     classDef junctionStyle fill:#000,stroke:#000,stroke-width:3px,color:#fff
-    classDef groundStyle fill:#f1f8e9,stroke:#689f38,stroke-width:2px,color:#000
-    classDef dataStyle fill:#e8f5e8,stroke:#4caf50,stroke-width:2px,color:#000
+    classDef groundStyle fill:#f1f8e9,stroke:#689f38,stroke-width:2px
+    classDef dataStyle fill:#e8f5e8,stroke:#4caf50,stroke-width:2px
     
     class TX,RX pinStyle
     class R1,R2,R3 resistorStyle
