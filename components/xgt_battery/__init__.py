@@ -50,9 +50,26 @@ CELL_VOLTAGE_SCHEMA = cv.Schema({
 })
 
 def validate_uart_settings(config):
-    """Validate that UART is configured correctly for XGT battery communication"""
-    # Note: UART validation happens during the UART component validation
-    # This function serves as documentation of requirements
+    """Validate that UART is configured correctly for XGT battery communication
+    
+    XGT Battery UART Requirements:
+    - Baud Rate: 9600
+    - Parity: EVEN (8E1 format) - CRITICAL
+    - Half Duplex: true (recommended for simplified wiring)
+    - TX Pin: inverted: true (required)
+    
+    Recommended half duplex configuration:
+    uart:
+      - id: xgt_uart
+        baud_rate: 9600
+        half_duplex: true
+        parity: EVEN
+        tx_pin: 
+          number: GPIO14
+          inverted: true
+    """
+    # Note: Actual UART validation happens during the UART component validation
+    # This function serves as documentation of requirements and best practices
     return config
 
 CONFIG_SCHEMA = cv.All(

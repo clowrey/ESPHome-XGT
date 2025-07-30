@@ -115,25 +115,25 @@ void XGTBattery::dump_config() {
     ESP_LOGCONFIG(TAG, "  UART Configuration:");
     ESP_LOGCONFIG(TAG, "    Baud Rate: 9600 (required for XGT battery)");
     ESP_LOGCONFIG(TAG, "    Parity: EVEN (required for XGT battery - 8E1 format)");
-    ESP_LOGCONFIG(TAG, "    Signal Inversion: Required for TX/RX pins");
+    ESP_LOGCONFIG(TAG, "    Half Duplex: Recommended for simplified wiring");
+    ESP_LOGCONFIG(TAG, "    Signal Inversion: Required for TX pin");
     
     // Check UART settings using the standard ESPHome method
     this->check_uart_settings(9600, 1, uart::UART_CONFIG_PARITY_EVEN, 8);
     
-    // Log a warning if user might have missed the critical UART requirements
-    ESP_LOGCONFIG(TAG, "  IMPORTANT: XGT battery requires:");
+    // Log recommended configuration for users
+    ESP_LOGCONFIG(TAG, "  RECOMMENDED: Half duplex configuration:");
     ESP_LOGCONFIG(TAG, "    - Baud rate: 9600");
     ESP_LOGCONFIG(TAG, "    - Parity: EVEN (8E1 format)"); 
-    ESP_LOGCONFIG(TAG, "    - TX/RX pins must be inverted: true");
-    ESP_LOGCONFIG(TAG, "    - Example UART config in YAML:");
+    ESP_LOGCONFIG(TAG, "    - Half duplex: true (single wire)");
+    ESP_LOGCONFIG(TAG, "    - TX pin inverted: true");
+    ESP_LOGCONFIG(TAG, "    - Example half duplex UART config:");
     ESP_LOGCONFIG(TAG, "      uart:");
     ESP_LOGCONFIG(TAG, "        baud_rate: 9600");
+    ESP_LOGCONFIG(TAG, "        half_duplex: true");
     ESP_LOGCONFIG(TAG, "        parity: EVEN");
     ESP_LOGCONFIG(TAG, "        tx_pin:");
-    ESP_LOGCONFIG(TAG, "          number: GPIO43");
-    ESP_LOGCONFIG(TAG, "          inverted: true");
-    ESP_LOGCONFIG(TAG, "        rx_pin:");
-    ESP_LOGCONFIG(TAG, "          number: GPIO44");
+    ESP_LOGCONFIG(TAG, "          number: GPIO14");
     ESP_LOGCONFIG(TAG, "          inverted: true");
 }
 
@@ -254,26 +254,11 @@ int8_t XGTBattery::send_battery(uint8_t *buf, const uint8_t *command, uint8_t cm
         }
         
     } else {
-        // Short command: Handle echo + response like before
-        if (*rx_length < 16) {
-            return 1;  // Need at least 16 bytes (8 echo + 8 response)
-        }
+        // Short command: HALF DUPLEX MODE - no echo removal needed
+        // All received bytes are the actual response data
+        ESP_LOGV(TAG, "Processing as SHORT command in HALF DUPLEX mode - all %d bytes are response data", *rx_length);
         
-        ESP_LOGV(TAG, "Processing as SHORT command - removing 8-byte echo, keeping 8-byte response");
-        
-        // Single-wire interface: First 8 bytes are command echo, next 8 bytes are response
-        // Shift the response to the beginning of the buffer and update length
-        for (uint8_t i = 0; i < 8; i++) {
-            buf[i] = buf[i + 8];  // Move response bytes to start of buffer
-        }
-        *rx_length = 8;  // Now we only have the 8-byte response
-        
-        ESP_LOGV(TAG, "After removing command echo, response is %d bytes:", *rx_length);
-        for (uint8_t i = 0; i < *rx_length; i++) {
-            ESP_LOGV(TAG, "  RESPONSE[%d] = 0x%02X", i, buf[i]);
-        }
-        
-        // Convert bit order from MSB first to LSB first (only for the response)
+        // Convert bit order from MSB first to LSB first (all received data is response)
         for (uint8_t i = 0; i < *rx_length; ++i) {
             buf[i] = (lookup_[buf[i] & 0b1111] << 4) | lookup_[buf[i] >> 4];
         }

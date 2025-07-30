@@ -18,7 +18,24 @@ esp32:
 psram:
 
 logger:
-  level: DEBUG
+  level: VERBOSE
+  logs:
+    # Reduce verbosity of noisy components (keep only xgt_battery at VERBOSE)
+    lvgl: INFO
+    api: INFO
+    ota: INFO
+    wifi: INFO
+    uart: INFO
+    captive_portal: INFO
+    sensor: INFO
+    text_sensor: INFO
+    binary_sensor: INFO
+    output: INFO
+    spi: INFO
+    display: INFO
+    esp32: INFO
+    psram: INFO
+    esphome: INFO
 #  baud_rate: 0  
 
 api:
@@ -49,20 +66,24 @@ text_sensor:
 
 # External Components
 external_components:
+  - source:
+      type: git
+      url: https://github.com/ssieb/esphome
+      ref: uarthalf
+    components: [ uart ]
+    refresh: 0s
   - source: components
     components: [xgt_battery]
 
-# UART for XGT Battery Communication
+# New UART configuration with half-duplex support
 uart:
   - id: xgt_uart
     baud_rate: 9600
-    parity: EVEN  # Critical: XGT battery requires EVEN parity (8E1)
+    half_duplex: true
+    parity: EVEN          # CRITICAL: Must be EVEN parity (8E1)
     tx_pin: 
-      number: GPIO43  # TX pin for XGT battery communication
-      inverted: true  # Critical: XGT battery requires inverted UART signals
-    rx_pin: 
-      number: GPIO44  # RX pin for XGT battery communication  
-      inverted: true  # Critical: XGT battery requires inverted UART signals
+      number: GPIO14
+      inverted: true      # CRITICAL: Must be inverted
 
 # XGT Battery Component
 xgt_battery:
