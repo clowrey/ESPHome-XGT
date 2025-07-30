@@ -58,10 +58,7 @@ flowchart LR
     ┌─[==]─┐
     **470Ω**`"}
     
-    D1{{"`**D1**
-    ──|▷|──
-    **1N60P**
-    (Schottky)`"}}
+    D1{{"`**D1** ──|▷|── **1N60P** (Schottky)`"}}
     
     %% Connection Points
     MID(("`**●**
