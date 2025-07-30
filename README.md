@@ -60,7 +60,8 @@ flowchart LR
     
     D1{{"`**D1**
     ──|▷|──
-    **Diode**`"}}
+    **1N60P**
+    (Schottky)`"}}
     
     %% Connection Points
     MID(("`**●**
@@ -107,14 +108,17 @@ flowchart LR
 - **R1**: 10kΩ (pulldown resistor for RX)
 - **R2**: 4.7kΩ (RX to midpoint)
 - **R3**: 470Ω (midpoint to XGT data line)
-- **D1**: Signal diode (1N4148 or similar)
+- **D1**: 1N60P Schottky diode (low forward voltage drop)
 
 **Circuit Operation:**
 - The 10kΩ pulldown ensures RX reads low when no signal is present
 - The 4.7kΩ resistor provides current limiting and voltage division
-- The diode allows TX to drive the line high while preventing backfeed
+- The 1N60P Schottky diode allows TX to drive the line high while preventing backfeed (low forward voltage drop improves signal integrity)
 - The 470Ω resistor provides current limiting to the XGT battery data line
 - Both TX and RX pins must be configured as inverted in software
+
+![Protocol Scope Trace](img/scope.png)
+*Oscilloscope trace showing XGT battery communication protocol with proper signal inversion and timing*
 
 ## Critical UART Configuration Requirements
 
@@ -305,9 +309,6 @@ The component implements the proprietary Makita XGT communication protocol:
 - CRC validation for data integrity
 - State machine for non-blocking operation
 - Support for up to 10 individual cell voltage readings
-
-![Protocol Scope Trace](img/scope.png)
-*Oscilloscope trace showing XGT battery communication protocol with proper signal inversion and timing*
 
 ## Troubleshooting
 
