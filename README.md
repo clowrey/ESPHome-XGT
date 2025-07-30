@@ -53,37 +53,6 @@ The XGT battery communication requires a specific interface circuit to handle th
 - The 470Ω resistor provides current limiting to the XGT battery data line
 - Both TX and RX pins must be configured as inverted in software
 
-**Text-Only Schematic (for documentation/terminals):**
-
-```
-                          ESP32-S3 Interface Circuit Schematic
-    
-    ESP32-S3                                                     XGT Battery
-    ┌──────────────┐                                            ┌──────────────┐
-    │              │                                            │              │
-    │  GPIO43 (TX) ○───┐                                        │              │
-    │   (inverted) │   │    D1                                  │              │
-    │              │   └───▶├──────┐                            │              │
-    │              │              │                            │              │
-    │              │              ●──────────────┐              │              │
-    │              │              │ Junction    │              │              │
-    │  GPIO44 (RX) ○───┐          │ Point       │              │              │
-    │   (inverted) │   │          │             │              │              │
-    │              │   │   ┌─────┐│      ┌─────┐│              │   Data Pin   │
-    │              │   └───┤ R2  ├┘      │ R3  ├──────────────○  TR (TX/RX)  │
-    │              │       │4.7kΩ│       │470Ω │              │              │
-    │              │       └─────┘       └─────┘              │              │
-    │              │                                           │              │
-    │              │       ┌─────┐                             │              │
-    │              │   ┌───┤ R1  │                             │              │
-    │              │   │   │10kΩ │                             │              │
-    │              │   │   └─────┘                             │              │
-    │              │   │      │                                │              │
-    │         GND  ○───┴──────┴────────────────────────────────○         GND  │
-    │              │                                           │              │
-    └──────────────┘                                           └──────────────┘
-```
-
 ![Protocol Scope Trace](img/scope.png)
 *Oscilloscope trace showing XGT battery communication protocol with proper signal inversion and timing*
 

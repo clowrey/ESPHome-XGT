@@ -134,7 +134,7 @@
   <text x="230" y="175" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666" font-style="italic">
     RX Signal
   </text>
-  <text x="470" y="125" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666" font-style="italic">
+  <text x="570" y="125" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666" font-style="italic">
     Data Line
   </text>
   <text x="400" y="255" text-anchor="middle" font-family="Arial, sans-serif" font-size="9" fill="#666" font-style="italic">
