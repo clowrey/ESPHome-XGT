@@ -40,26 +40,43 @@ The XGT battery communication requires a specific interface circuit to handle th
 ```mermaid
 flowchart LR
     %% ESP32 Pins
-    TX["GPIO43<br/>(TX - inverted)"]
-    RX["GPIO44<br/>(RX - inverted)"]
+    TX["`**GPIO43**
+    (TX - inverted)`"]
+    RX["`**GPIO44** 
+    (RX - inverted)`"]
     
-    %% Interface Components  
-    R1{"R1<br/>┌─[==]─┐<br/>10kΩ"}
-    R2{"R2<br/>┌─[==]─┐<br/>4.7kΩ"}
-    R3{"R3<br/>┌─[==]─┐<br/>470Ω"}
-    D1{{"D1<br/>──|▷|──<br/>1N60P<br/>(Schottky)"}}
+    %% Interface Components
+    R1{"`**R1**
+    ┌─[==]─┐
+    **10kΩ**`"}
+    
+    R2{"`**R2**
+    ┌─[==]─┐
+    **4.7kΩ**`"}
+    
+    R3{"`**R3**
+    ┌─[==]─┐
+    **470Ω**`"}
+    
+    D1{{"`**D1**
+    ──|▷|──
+    **Diode**`"}}
     
     %% Connection Points
-    MID(("●<br/>Junction"))
+    MID(("`**●**
+    Junction`"))
     
     %% XGT Battery
-    DATA["XGT Data<br/>(Pin)"]
+    DATA["`**XGT Data**
+    (Pin)`"]
     
     %% Ground Symbols
-    GND_ESP["⏚<br/>ESP32 GND"]
-    GND_XGT["⏚<br/>XGT GND"]
+    GND_ESP["`**⏚**
+    **ESP32 GND**`"]
+    GND_XGT["`**⏚**
+    **XGT GND**`"]
     
-    %% Connections
+    %% Connections with better spacing
     TX -.-> D1
     D1 -.-> MID
     RX -.-> R2
@@ -71,12 +88,12 @@ flowchart LR
     GND_ESP -.-> GND_XGT
     
     %% Styling
-    classDef pinStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
-    classDef resistorStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px
-    classDef diodeStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef pinStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
+    classDef resistorStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
+    classDef diodeStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
     classDef junctionStyle fill:#000,stroke:#000,stroke-width:3px,color:#fff
-    classDef groundStyle fill:#f1f8e9,stroke:#689f38,stroke-width:2px
-    classDef dataStyle fill:#e8f5e8,stroke:#4caf50,stroke-width:2px
+    classDef groundStyle fill:#f1f8e9,stroke:#689f38,stroke-width:2px,color:#000
+    classDef dataStyle fill:#e8f5e8,stroke:#4caf50,stroke-width:2px,color:#000
     
     class TX,RX pinStyle
     class R1,R2,R3 resistorStyle
@@ -90,12 +107,12 @@ flowchart LR
 - **R1**: 10kΩ (pulldown resistor for RX)
 - **R2**: 4.7kΩ (RX to midpoint)
 - **R3**: 470Ω (midpoint to XGT data line)
-- **D1**: 1N60P Schottky diode (low forward voltage drop)
+- **D1**: Signal diode (1N4148 or similar)
 
 **Circuit Operation:**
 - The 10kΩ pulldown ensures RX reads low when no signal is present
 - The 4.7kΩ resistor provides current limiting and voltage division
-- The 1N60P Schottky diode allows TX to drive the line high while preventing backfeed (low forward voltage drop improves signal integrity)
+- The diode allows TX to drive the line high while preventing backfeed
 - The 470Ω resistor provides current limiting to the XGT battery data line
 - Both TX and RX pins must be configured as inverted in software
 
