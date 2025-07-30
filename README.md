@@ -1,6 +1,6 @@
 # XGT Battery Component for ESPHome
 
-This component provides comprehensive integration with EGO Power+ XGT battery packs through UART communication, featuring real-time monitoring and optional display integration.
+This component provides comprehensive integration with Makita XGT battery packs through UART communication, featuring real-time monitoring and optional display integration.
 
 ![XGT Battery Display](img/display.jpg)
 *Real-time battery monitoring display showing voltage, charge percentage, temperature, and cell diagnostics*
@@ -216,7 +216,7 @@ xgt_battery:
 
 ## Protocol Details
 
-The component implements the proprietary EGO Power+ XGT communication protocol:
+The component implements the proprietary Makita XGT communication protocol:
 - Single-wire serial communication with command echo
 - MSB-first bit ordering with bit reversal required
 - CRC validation for data integrity
@@ -295,6 +295,22 @@ binary_sensor:
         input: true
         pullup: true
 ```
+
+## Credits
+
+This component was made possible thanks to the pioneering work of the following projects and contributors:
+
+- **Protocol Decoding**: [Malvineous/makita-xgt-serial](https://github.com/Malvineous/makita-xgt-serial) - Comprehensive reverse engineering of the Makita XGT serial communication protocol, including electrical signals, data protocol, and checksum algorithms.
+
+- **Hardware Implementation**: [twaymouth/XGT-Tester](https://github.com/twaymouth/XGT-Tester/tree/main) - Basic battery tester implementation for Makita XGT batteries, providing practical examples of hardware interfacing and ESP32 implementation.
+
+Special thanks to:
+- **Malvineous** for reverse engineering the UART electrical signals and data protocol
+- **ESkri** for reverse engineering the checksum algorithm
+- **twaymouth** for the ESP32 hardware implementation and circuit design
+- **gcds** for locating relevant patent documentation
+
+Without their foundational work, this ESPHome component would not have been possible.
 
 ## License
 
