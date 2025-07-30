@@ -18,6 +18,8 @@ esp32:
 psram:
 
 logger:
+  level: DEBUG
+#  baud_rate: 0  
 
 api:
   reboot_timeout: 0s #disable auto 15min reboot with no HA connection
@@ -39,6 +41,151 @@ wifi:
     password: "password"
 
 captive_portal:
+
+# Platform components required by xgt_battery
+sensor:
+
+text_sensor:
+
+# External Components
+external_components:
+  - source: components
+    components: [xgt_battery]
+
+# UART for XGT Battery Communication
+uart:
+  - id: xgt_uart
+    baud_rate: 9600
+    parity: EVEN  # Critical: XGT battery requires EVEN parity (8E1)
+    tx_pin: 
+      number: GPIO43  # TX pin for XGT battery communication
+      inverted: true  # Critical: XGT battery requires inverted UART signals
+    rx_pin: 
+      number: GPIO44  # RX pin for XGT battery communication  
+      inverted: true  # Critical: XGT battery requires inverted UART signals
+
+# XGT Battery Component
+xgt_battery:
+  id: xgt_batt
+  uart_id: xgt_uart
+  update_interval: 5s
+  
+  # Main battery sensors
+  battery_voltage:
+    name: "Battery Voltage"
+    id: battery_voltage
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_battery_voltage
+            text: !lambda 'return str_sprintf("%.1fV", x);'
+  battery_temperature:
+    name: "Battery Temperature"
+    id: battery_temperature
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_battery_temp
+            text: !lambda 'return str_sprintf("%.0f°C", x);'
+  battery_charge:
+    name: "Battery Charge"
+    id: battery_charge
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_battery_soc
+            text: !lambda 'return str_sprintf("%.0f%%", x);'
+  battery_health:
+    name: "Battery Health"
+    id: battery_health
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_battery_soh
+            text: !lambda 'return str_sprintf("SOH %.0f%%", x);'
+  min_cell_voltage:
+    name: "Min Cell Voltage"
+    id: min_cell_voltage
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_min_cell
+            text: !lambda 'return str_sprintf("%.3fV", x);'
+  max_cell_voltage:
+    name: "Max Cell Voltage"
+    id: max_cell_voltage
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_max_cell
+            text: !lambda 'return str_sprintf("%.3fV", x);'
+  cell_divergence:
+    name: "Cell Divergence"
+    id: cell_divergence
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_cell_diff
+            text: !lambda 'return str_sprintf("%.0fmV", x * 1000);'
+    
+  # Diagnostic sensors
+  num_charges:
+    name: "Battery Charge Cycles"
+    id: battery_cycles
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_charge_cycles
+            text: !lambda 'return str_sprintf("%.0f cycles", x);'
+  cell_size:
+    name: "Cell Capacity"
+    id: cell_capacity
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_cell_capacity
+            text: !lambda 'return str_sprintf("%.0fmAh", x);'
+  parallel_count:
+    name: "Parallel Cell Count"
+    id: parallel_cells
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_parallel_count
+            text: !lambda 'return str_sprintf("%.0fP", x);'
+    
+  # Cell voltages (all 10 cells)
+  cell_voltage:
+    cell_1:
+      name: "Cell 1 Voltage"
+      id: cell_1_voltage
+    cell_2:
+      name: "Cell 2 Voltage"
+      id: cell_2_voltage
+    cell_3:
+      name: "Cell 3 Voltage"
+      id: cell_3_voltage
+    cell_4:
+      name: "Cell 4 Voltage"
+      id: cell_4_voltage
+    cell_5:
+      name: "Cell 5 Voltage"
+      id: cell_5_voltage
+    cell_6:
+      name: "Cell 6 Voltage"
+      id: cell_6_voltage
+    cell_7:
+      name: "Cell 7 Voltage"
+      id: cell_7_voltage
+    cell_8:
+      name: "Cell 8 Voltage"
+      id: cell_8_voltage
+    cell_9:
+      name: "Cell 9 Voltage"
+      id: cell_9_voltage
+    cell_10:
+      name: "Cell 10 Voltage"
+      id: cell_10_voltage
 
 # Buttons
 binary_sensor:
@@ -119,7 +266,7 @@ lvgl:
     align: center
     style_definitions:
       - id: font_style
-        text_font: MONTSERRAT_12
+        text_font: MONTSERRAT_20
         #text_font: unscii_16
         align: center
         text_color: 0xFFFFFF
@@ -127,44 +274,124 @@ lvgl:
         bg_opa: TRANSP
         bg_color: 0
         radius: 4
-        pad_all: 2 
+        pad_all: 1 
       - id: details_style
-        text_font: MONTSERRAT_16
+        text_font: MONTSERRAT_24
         align: center
         text_color: 0xFFFFFF
         #bg_opa: cover
         bg_opa: TRANSP
         bg_color: 0
         radius: 4
-        pad_all: 2 
+        pad_all: 1
+      - id: small_font_style
+        text_font: MONTSERRAT_16
+        align: center
+        text_color: 0xFFFFFF
+        bg_opa: TRANSP
+        bg_color: 0
+        radius: 2
+        pad_all: 1
+      - id: large_font_style
+        text_font: MONTSERRAT_28
+        align: center
+        text_color: 0xFFFFFF
+        bg_opa: TRANSP
+        bg_color: 0
+        radius: 2
+        pad_all: 1 
     page_wrap: true
     pages:
       - id: main_page
         widgets:
-          - obj: # Meter
-              height: 128 # needed to be explicitily defined for my round display to not have weird border line overlapping gauge
+          - obj: # Main container
+              height: 128
               width: 128
               align: center
               bg_color: 0
-              #bg_opa: TRANSP
               border_width: 0
               outline_width: 0
-              #shadow_width: 0
               pad_all: 0
               scrollbar_mode: "off"
-              #clip_corner: true
-              #radius: 120
               widgets:
+                # Pack Voltage - Top left
                 - label:
                     styles: font_style
-                    #text_font: MONTSERRAT_32 # override font size
+                    id: label_battery_voltage
+                    y: -49
+                    x: -29
+                    text: "-.-V"
+                    
+                # Battery Charge % - Top right
+                - label:
+                    styles: large_font_style
                     id: label_battery_soc
-                    y: -38
-                    x: 0 #positive = to the right of center
+                    y: -50
+                    x: 35
+                    text: "---%"
+                    
+                # Temperature - Left side  
                 - label:
-                    styles: font_style
-                    id: label_house_power
-                    text_color: 0xffffff
-                    y: -6 #positive = below center
-                    x: 0 #positive = to the right of center
+                    styles: small_font_style
+                    id: label_battery_temp
+                    y: -15
+                    x: -39
+                    text: "-.-°C"
+                    
+                # SOH (Battery Health) - Right side
+                - label:
+                    styles: small_font_style
+                    id: label_battery_soh
+                    y: -15
+                    x: 25
+                    text: "SOH ---%"
+                    
+                # Min Cell Voltage - Left middle
+                - label:
+                    styles: small_font_style
+                    id: label_min_cell
+                    y: 8
+                    x: -35
+                    text: "-.---V"
+                    
+                # Max Cell Voltage - Right middle
+                - label:
+                    styles: small_font_style
+                    id: label_max_cell
+                    y: 8
+                    x: 35
+                    text: "-.---V"
+                    
+                # Cell voltage difference - Left
+                - label:
+                    styles: small_font_style
+                    id: label_cell_diff
+                    y: 31
+                    x: -35
+                    text: "---mV"
+                    
+                # Charge cycles - Right
+                - label:
+                    styles: small_font_style
+                    id: label_charge_cycles
+                    y: 31
+                    x: 30
+                    text: "--- cycles"
+                    
+                # Cell capacity - Left bottom
+                - label:
+                    styles: small_font_style
+                    id: label_cell_capacity
+                    y: 54
+                    x: -21
+                    text: "---mAh"
+                    
+                # Parallel count - Right bottom
+                - label:
+                    styles: small_font_style
+                    id: label_parallel_count
+                    y: 54
+                    x: 41
+                    text: "---P"
+ 
     
