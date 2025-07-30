@@ -20,7 +20,7 @@ This component provides comprehensive integration with Makita XGT battery packs 
 
 ### Supported Platforms:
 - **ESP32** (all variants including ESP32-S3)
-- **Tested Configuration**: Lolin S3 Mini board
+- **Tested Configuration**: Lolin S3 Mini Pro board
 - **Display Support**: 128x128 ILI9xxx displays (ST7789V)
 - **Additional Hardware**: WS2812 LED support, physical buttons
 
@@ -32,6 +32,89 @@ This component provides comprehensive integration with Makita XGT battery packs 
 
 ![Wiring Example](img/wiring-example.jpg)
 *Example wiring configuration showing ESP32 connections to XGT battery communication interface*
+
+### Interface Circuit Schematic
+
+The XGT battery communication requires a specific interface circuit to handle the single-wire, bidirectional communication:
+
+```mermaid
+flowchart LR
+    %% ESP32 Pins
+    TX["`**GPIO43**
+    (TX - inverted)`"]
+    RX["`**GPIO44** 
+    (RX - inverted)`"]
+    
+    %% Interface Components
+    R1{"`**R1**
+    ┌─[==]─┐
+    **10kΩ**`"}
+    
+    R2{"`**R2**
+    ┌─[==]─┐
+    **4.7kΩ**`"}
+    
+    R3{"`**R3**
+    ┌─[==]─┐
+    **470Ω**`"}
+    
+    D1{{"`**D1**
+    ──|▷|──
+    **Diode**`"}}
+    
+    %% Connection Points
+    MID(("`**●**
+    Junction`"))
+    
+    %% XGT Battery
+    DATA["`**XGT Data**
+    (Pin)`"]
+    
+    %% Ground Symbols
+    GND_ESP["`**⏚**
+    **ESP32 GND**`"]
+    GND_XGT["`**⏚**
+    **XGT GND**`"]
+    
+    %% Connections with better spacing
+    TX -.-> D1
+    D1 -.-> MID
+    RX -.-> R2
+    R2 -.-> MID
+    RX -.-> R1
+    R1 -.-> GND_ESP
+    MID -.-> R3
+    R3 -.-> DATA
+    GND_ESP -.-> GND_XGT
+    
+    %% Styling
+    classDef pinStyle fill:#e3f2fd,stroke:#1976d2,stroke-width:2px,color:#000
+    classDef resistorStyle fill:#fff3e0,stroke:#f57c00,stroke-width:2px,color:#000
+    classDef diodeStyle fill:#fce4ec,stroke:#c2185b,stroke-width:2px,color:#000
+    classDef junctionStyle fill:#000,stroke:#000,stroke-width:3px,color:#fff
+    classDef groundStyle fill:#f1f8e9,stroke:#689f38,stroke-width:2px,color:#000
+    classDef dataStyle fill:#e8f5e8,stroke:#4caf50,stroke-width:2px,color:#000
+    
+    class TX,RX pinStyle
+    class R1,R2,R3 resistorStyle
+    class D1 diodeStyle
+    class MID junctionStyle
+    class GND_ESP,GND_XGT groundStyle
+    class DATA dataStyle
+```
+
+**Component Values:**
+- **R1**: 10kΩ (pulldown resistor for RX)
+- **R2**: 4.7kΩ (RX to midpoint)
+- **R3**: 470Ω (midpoint to XGT data line)
+- **D1**: Signal diode (1N4148 or similar)
+
+**Circuit Operation:**
+- The 10kΩ pulldown ensures RX reads low when no signal is present
+- The 4.7kΩ resistor provides current limiting and voltage division
+- The diode allows TX to drive the line high while preventing backfeed
+- The 470Ω resistor provides current limiting to the XGT battery data line
+- Both TX and RX pins must be configured as inverted in software
 
 ## Critical UART Configuration Requirements
 
