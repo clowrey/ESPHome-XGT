@@ -30,8 +30,8 @@ This component provides comprehensive integration with Makita XGT battery packs 
 - Proper voltage level matching (3.3V logic levels)
 - Optional: SPI display for real-time monitoring interface
 
-![Wiring Example](img/wiring-example.jpg)
-*Example wiring configuration showing ESP32 connections to XGT battery communication interface*
+![Hardware One Wire Setup](img/hardware_one_wire.jpg)
+*Simplified one wire hardware setup showing ESP32 connected directly to XGT battery data line (half duplex configuration)*
 
 ### XGT Battery Connector Details
 
@@ -41,25 +41,24 @@ This component provides comprehensive integration with Makita XGT battery packs 
 ![XGT Connector 2](img/xgt-connector2.jpg)
 *Close-up view of XGT connector - white wire carries the bidirectional TR (TX/RX) data signal*
 
-### Interface Circuit Schematic
+### Simplified Hardware Interface
 
-The XGT battery communication requires a specific interface circuit to handle the single-wire, bidirectional communication:
+The XGT battery communication can be implemented with a simple single-resistor interface:
 
-![Interface Circuit](img/xgt-interface-schematic.svg)
-*Schematic*
+**Hardware Setup:**
+- **Single Resistor**: Connect a 1kΩ resistor from ESP32 GPIO14 to XGT battery data line
+- **Ground Connection**: Connect ESP32 ground to battery negative terminal
+- **Configuration**: Use GPIO14 as both TX and RX (half-duplex UART)
 
 **Component Values:**
-- **R1**: 10kΩ (pulldown resistor for RX)
-- **R2**: 4.7kΩ (RX to midpoint)
-- **R3**: 470Ω (midpoint to XGT data line)
-- **D1**: Signal diode (1N4148 or 1N60P)
+- **R1**: 1kΩ (current limiting resistor from GPIO14 to XGT data line)
 
 **Circuit Operation:**
-- The 10kΩ pulldown ensures RX reads low when no signal is present
-- The 4.7kΩ resistor provides current limiting and voltage division
-- The diode allows TX to drive the line high while preventing backfeed
-- The 470Ω resistor provides current limiting to the XGT battery data line
-- Both TX and RX pins must be configured as inverted in software
+- GPIO14 functions as a bidirectional data line with current limiting
+- The single resistor provides sufficient current limiting and signal conditioning
+- TX pin must be configured as inverted in software
+- Half-duplex operation handles bidirectional communication on single pin
+- Requires external UART component with half-duplex support
 
 ![Protocol Scope Trace](img/scope.png)
 *Oscilloscope trace showing XGT battery communication protocol with proper signal inversion and timing*
@@ -70,23 +69,32 @@ The XGT battery communication requires a specific interface circuit to handle th
 
 ### Required UART Settings:
 - **Baud Rate**: 9600
+- **Half-Duplex**: true - **CRITICAL FOR SINGLE-PIN OPERATION**
 - **Parity**: EVEN (8E1 format) - **CRITICAL FOR PROPER COMMUNICATION**
 - **Data Bits**: 8
 - **Stop Bits**: 1
-- **Signal Inversion**: Both TX and RX pins must be inverted
+- **Signal Inversion**: TX pin must be inverted
+- **External Component**: ssieb/esphome uarthalf branch required
 
 ### Example UART Configuration:
 
 ```yaml
+# Required external component for half-duplex UART support
+external_components:
+  - source:
+      type: git
+      url: https://github.com/ssieb/esphome
+      ref: uarthalf
+    components: [ uart ]
+    refresh: 0s
+
 uart:
   - id: xgt_uart
     baud_rate: 9600
+    half_duplex: true     # CRITICAL: Enable half-duplex mode for single-pin operation
     parity: EVEN          # CRITICAL: Must be EVEN parity (8E1)
     tx_pin: 
-      number: GPIO43
-      inverted: true      # CRITICAL: Must be inverted
-    rx_pin: 
-      number: GPIO44  
+      number: GPIO14
       inverted: true      # CRITICAL: Must be inverted
 ```
 
@@ -118,19 +126,23 @@ uart:
 ```yaml
 # External Components
 external_components:
+  - source:
+      type: git
+      url: https://github.com/ssieb/esphome
+      ref: uarthalf
+    components: [ uart ]
+    refresh: 0s
   - source: components
     components: [xgt_battery]
 
-# UART Configuration (with critical settings)
+# UART Configuration (with half-duplex support)
 uart:
   - id: xgt_uart
     baud_rate: 9600
+    half_duplex: true     # CRITICAL: Enable half-duplex mode for single-pin operation
     parity: EVEN          # CRITICAL: XGT battery requires EVEN parity
     tx_pin: 
-      number: GPIO43
-      inverted: true      # CRITICAL: XGT battery requires inverted signals
-    rx_pin: 
-      number: GPIO44  
+      number: GPIO14
       inverted: true      # CRITICAL: XGT battery requires inverted signals
 
 # XGT Battery Component
@@ -263,7 +275,9 @@ The component implements the proprietary Makita XGT communication protocol:
    - Verify you're using the 8E1 format (8 data bits, even parity, 1 stop bit)
 
 2. **No response from battery**:
-   - Check that both TX and RX pins have `inverted: true`
+   - Check that TX pin has `inverted: true`
+   - Verify `half_duplex: true` is set in UART configuration
+   - Ensure external UART component (ssieb/esphome uarthalf) is loaded
    - Verify GPIO pin connections
    - Ensure battery is awake and communicating
    - Check if battery is properly seated and powered
@@ -281,7 +295,9 @@ The component implements the proprietary Makita XGT communication protocol:
 
 ### Debug Logging:
 
-Set logging level to `DEBUG` to see detailed communication:
+For communications debugging, ESPHome provides multiple logging levels to help diagnose XGT battery communication issues:
+
+#### Basic Debug Logging:
 
 ```yaml
 logger:
