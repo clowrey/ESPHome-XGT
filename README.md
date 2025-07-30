@@ -38,7 +38,7 @@ This component provides comprehensive integration with Makita XGT battery packs 
 The XGT battery communication requires a specific interface circuit to handle the single-wire, bidirectional communication:
 
 ![Interface Circuit](img/xgt-interface-schematic.svg)
-*Professional schematic showing the complete interface circuit with proper electronic symbols*
+*Complete interface circuit schematic with proper electronic symbols*
 
 **Component Values:**
 - **R1**: 10kΩ (pulldown resistor for RX)
