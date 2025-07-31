@@ -27,7 +27,6 @@ This component provides comprehensive integration with Makita XGT battery packs 
 ### Hardware Requirements:
 - ESP32 microcontroller
 - Direct connection to XGT battery communication pins
-- Proper voltage level matching (3.3V logic levels)
 - Optional: SPI display for real-time monitoring interface
 
 ![Hardware One Wire Setup](img/hardware_one_wire.jpg)
@@ -60,7 +59,7 @@ The XGT battery communication can be implemented with a simple single-resistor i
 - Half-duplex operation handles bidirectional communication on single pin
 - Requires external UART component with half-duplex support
 
-![Protocol Scope Trace](img/scope.png)
+![Protocol Scope Trace](img/scope_one_wire.jpg)
 *Oscilloscope trace showing XGT battery communication protocol with proper signal inversion and timing*
 
 ## Critical UART Configuration Requirements
@@ -266,79 +265,12 @@ The component implements the proprietary Makita XGT communication protocol:
 - State machine for non-blocking operation
 - Support for up to 10 individual cell voltage readings
 
-## Troubleshooting
-
-### Common Issues:
-
-1. **"UART parity mismatch" warnings**:
-   - Ensure `parity: EVEN` is set in your UART configuration
-   - Verify you're using the 8E1 format (8 data bits, even parity, 1 stop bit)
-
-2. **No response from battery**:
-   - Check that TX pin has `inverted: true`
-   - Verify `half_duplex: true` is set in UART configuration
-   - Ensure external UART component (ssieb/esphome uarthalf) is loaded
-   - Verify GPIO pin connections
-   - Ensure battery is awake and communicating
-   - Check if battery is properly seated and powered
-
-3. **CRC errors**:
-   - Verify UART signal inversion settings
-   - Check for electromagnetic interference
-   - Ensure stable power supply
-   - Verify proper grounding
-
-4. **Display not updating**:
-   - Check LVGL label IDs match sensor on_value configurations
-   - Verify SPI connections for display
-   - Ensure display initialization is successful
-
-### Debug Logging:
-
-For communications debugging, ESPHome provides multiple logging levels to help diagnose XGT battery communication issues:
-
-#### Basic Debug Logging:
-
-```yaml
-logger:
-  level: DEBUG
-  baud_rate: 0  # Disable UART logging to prevent conflict
-```
-
-### Performance Optimization:
+## Performance Optimization
 
 - **Update Interval**: Default is 5 seconds. Increase for battery conservation
 - **Sensor Selection**: Only configure sensors you need to reduce processing overhead
 - **Display Updates**: Use conditional updates to minimize LVGL overhead
 
-## Advanced Configuration
-
-### ESP32-S3 Specific Settings:
-
-```yaml
-esp32:
-  board: lolin_s3_mini
-  variant: esp32s3
-  flash_size: 4MB
-  framework:
-    type: esp-idf
-
-psram:  # Enable for display applications
-```
-
-### Hardware Button Integration:
-
-```yaml
-binary_sensor:
-  - platform: gpio
-    name: "Button - Left"
-    pin:
-      number: GPIO0
-      inverted: true
-      mode:
-        input: true
-        pullup: true
-```
 
 ## Credits
 
