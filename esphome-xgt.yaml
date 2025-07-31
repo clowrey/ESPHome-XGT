@@ -18,25 +18,7 @@ esp32:
 psram:
 
 logger:
-  level: VERBOSE
-  logs:
-    # Reduce verbosity of noisy components (keep only xgt_battery at VERBOSE)
-    lvgl: INFO
-    api: INFO
-    ota: INFO
-    wifi: INFO
-    uart: INFO
-    captive_portal: INFO
-    sensor: INFO
-    text_sensor: INFO
-    binary_sensor: INFO
-    output: INFO
-    spi: INFO
-    display: INFO
-    esp32: INFO
-    psram: INFO
-    esphome: INFO
-#  baud_rate: 0  
+  level: DEBUG
 
 api:
   reboot_timeout: 0s #disable auto 15min reboot with no HA connection
@@ -51,7 +33,6 @@ wifi:
   reboot_timeout: 0s #disable reboot if no wifi - Defaults to 15min. Does not apply when in access point mode.
   ssid: !secret wifi_ssid
   password: !secret wifi_password
-
   
   ap: # Enable fallback hotspot (captive portal) in case wifi connection fails
     ssid: "esphome-xgt"
