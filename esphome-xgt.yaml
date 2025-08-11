@@ -17,6 +17,17 @@ esp32:
 
 psram:
 
+# Global variable to track discharge MOSFET state
+globals:
+  - id: discharge_mosfet_state
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: undervoltage_lockout
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
 logger:
   level: DEBUG
 
@@ -113,6 +124,30 @@ xgt_battery:
         - lvgl.label.update:
             id: label_min_cell
             text: !lambda 'return str_sprintf("%.3fV", x);'
+        # Undervoltage protection - turn off discharge if any cell below 3.3V
+        - if:
+            condition:
+              lambda: 'return x < 3.3;'
+            then:
+              - output.turn_off: discharge_mosfet_output
+              - globals.set:
+                  id: discharge_mosfet_state
+                  value: 'false'
+              - globals.set:
+                  id: undervoltage_lockout
+                  value: 'true'
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text: "OFF"
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text_color: 0xFF0000  # Red
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text: "UV"
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text_color: 0xFF0000  # Red
   max_cell_voltage:
     name: "Max Cell Voltage"
     id: max_cell_voltage
@@ -203,12 +238,55 @@ binary_sensor:
 
   - platform: gpio
     name: "Button - Middle"
+    id: button_middle
     pin:
       number: GPIO47
       inverted: true
       mode:
           input: true
           pullup: true
+    on_press:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(discharge_mosfet_state);'
+            then:
+              - output.turn_off: discharge_mosfet_output
+              - globals.set:
+                  id: discharge_mosfet_state
+                  value: 'false'
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text: "OFF"
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text_color: 0xFF0000  # Red
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text: "UV OK"
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text_color: 0x00FF00  # Green
+            else:
+              - output.turn_on: discharge_mosfet_output
+              - globals.set:
+                  id: discharge_mosfet_state
+                  value: 'true'
+              - globals.set:
+                  id: undervoltage_lockout
+                  value: 'false'
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text: "ON"
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text_color: 0x00FF00  # Green
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text: "UV OK"
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text_color: 0x00FF00  # Green
 
           
   - platform: gpio
@@ -219,6 +297,13 @@ binary_sensor:
       mode:
           input: true
           pullup: true
+          
+  # Template sensor to track discharge MOSFET state
+  - platform: template
+    name: "Discharge MOSFET State"
+    id: discharge_state_sensor
+    lambda: |-
+      return id(discharge_mosfet_state);
     
 # WS2812 LED
 # PIN GPIO07 needs to be HIGH so it gets power
@@ -232,6 +317,10 @@ output:
   - platform: gpio
     pin: GPIO33
     id: backlight_output
+  # Discharge MOSFET Control
+  - platform: gpio
+    pin: GPIO37
+    id: discharge_mosfet_output
 
 spi:
   clk_pin: GPIO40
@@ -331,6 +420,24 @@ lvgl:
                     y: -50
                     x: 35
                     text: "---%"
+                    
+                # Discharge MOSFET Status - Left side below pack V and SOC
+                - label:
+                    styles: small_font_style
+                    id: label_discharge_status
+                    y: -32
+                    x: -20
+                    text: "OFF"
+                    text_color: 0xFF0000  # Red for OFF initially
+                    
+                # UV Indicator - Right side, same line as discharge status
+                - label:
+                    styles: small_font_style
+                    id: label_uv_indicator
+                    y: -32
+                    x: 25
+                    text: "UV OK"
+                    text_color: 0x00FF00  # Green for OK state
                     
                 # Temperature - Left side  
                 - label:

@@ -15,6 +15,9 @@ This component provides comprehensive integration with Makita XGT battery packs 
 - Non-blocking state machine implementation
 - LVGL display integration support for real-time visualization
 - Hardware button support for user interaction
+- **Discharge MOSFET control** with GPIO output and button toggle
+- **Undervoltage protection** with automatic discharge cutoff below 3.3V
+- **Visual status indicators** for discharge state and undervoltage conditions
 
 ## Hardware Compatibility
 
@@ -28,6 +31,8 @@ This component provides comprehensive integration with Makita XGT battery packs 
 - ESP32 microcontroller
 - Direct connection to XGT battery communication pins
 - Optional: SPI display for real-time monitoring interface
+- **Discharge Control**: GPIO37 for MOSFET control, GPIO47 for button input
+- **Safety Circuit**: External discharge MOSFET and current limiting components
 
 ![Hardware One Wire Setup](img/hardware_one_wire.jpg)
 *Simplified one wire hardware setup showing ESP32 connected directly to XGT battery data line (half duplex configuration)*
@@ -118,6 +123,36 @@ uart:
 - **cell_size**: Individual cell capacity (mAh)
 - **parallel_count**: Number of parallel cell groups
 
+## Discharge Control System
+
+The component includes an integrated discharge control system with safety features:
+
+### Features:
+- **GPIO Control**: Pin 37 controls discharge MOSFET output
+- **Button Toggle**: Pin 47 button toggles discharge on/off
+- **Visual Feedback**: LCD displays discharge status with color coding
+- **Safety Protection**: Automatic cutoff prevents cell damage
+
+### Safety Features:
+- **Undervoltage Protection**: Automatically disables discharge when any cell drops below 3.3V
+- **Visual Indicators**: 
+  - "ON" (green) / "OFF" (red) discharge status
+  - "UV" (red) indicator when undervoltage lockout is active
+- **Manual Override**: User can re-enable discharge after voltage recovery
+
+### LCD Display Layout:
+```
+  [Pack V]     [SOC%]
+   OFF    UV     <- Status line
+  [Temp]   [SOH]
+```
+
+### Operation:
+1. **Normal Operation**: Press middle button (pin 47) to toggle discharge
+2. **Undervoltage Event**: System automatically turns OFF discharge and shows "UV" indicator
+3. **Recovery**: Once cells recover above 3.3V, user can manually re-enable discharge
+4. **Reset**: UV indicator clears when discharge is manually re-enabled
+
 ## Usage
 
 ### Basic Configuration:
@@ -197,6 +232,109 @@ xgt_battery:
     # ... add more cells as needed up to cell_10
 ```
 
+### Discharge Control Configuration:
+
+```yaml
+# Global variables for state tracking
+globals:
+  - id: discharge_mosfet_state
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: undervoltage_lockout
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+# GPIO output for discharge MOSFET control
+output:
+  - platform: gpio
+    pin: GPIO37
+    id: discharge_mosfet_output
+
+# Button configuration with discharge control
+binary_sensor:
+  - platform: gpio
+    name: "Button - Middle"
+    id: button_middle
+    pin:
+      number: GPIO47
+      inverted: true
+      mode:
+          input: true
+          pullup: true
+    on_press:
+      then:
+        - if:
+            condition:
+              lambda: 'return id(discharge_mosfet_state);'
+            then:
+              # Turn OFF discharge
+              - output.turn_off: discharge_mosfet_output
+              - globals.set:
+                  id: discharge_mosfet_state
+                  value: 'false'
+              - globals.set:
+                  id: undervoltage_lockout
+                  value: 'false'
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text: "OFF"
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text_color: 0xFF0000  # Red
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text: ""
+            else:
+              # Turn ON discharge
+              - output.turn_on: discharge_mosfet_output
+              - globals.set:
+                  id: discharge_mosfet_state
+                  value: 'true'
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text: "ON"
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text_color: 0x00FF00  # Green
+
+# Undervoltage protection (added to min_cell_voltage sensor)
+xgt_battery:
+  min_cell_voltage:
+    name: "Min Cell Voltage"
+    id: min_cell_voltage
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_min_cell
+            text: !lambda 'return str_sprintf("%.3fV", x);'
+        # Undervoltage protection
+        - if:
+            condition:
+              lambda: 'return x < 3.3;'
+            then:
+              - output.turn_off: discharge_mosfet_output
+              - globals.set:
+                  id: discharge_mosfet_state
+                  value: 'false'
+              - globals.set:
+                  id: undervoltage_lockout
+                  value: 'true'
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text: "OFF"
+              - lvgl.label.update:
+                  id: label_discharge_status
+                  text_color: 0xFF0000  # Red
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text: "UV"
+              - lvgl.label.update:
+                  id: label_uv_indicator
+                  text_color: 0xFF0000  # Red
+```
+
 ### Display Integration Example:
 
 The component supports real-time display updates using LVGL. Here's an example configuration for a 128x128 display:
@@ -244,6 +382,21 @@ lvgl:
                 - label:
                     id: label_battery_soc  
                     text: "---%"
+                # Discharge status indicators
+                - label:
+                    styles: small_font_style
+                    id: label_discharge_status
+                    y: -32
+                    x: -20
+                    text: "OFF"
+                    text_color: 0xFF0000  # Red for OFF initially
+                - label:
+                    styles: small_font_style
+                    id: label_uv_indicator
+                    y: -32
+                    x: 25
+                    text: ""
+                    text_color: 0xFF0000  # Red when active
                 # ... additional display elements
 
 # Update display when sensor values change
@@ -255,6 +408,20 @@ xgt_battery:
             id: label_battery_voltage
             text: !lambda 'return str_sprintf("%.1fV", x);'
 ```
+
+## Safety Considerations
+
+When implementing the discharge control system:
+
+⚠️ **IMPORTANT SAFETY NOTES**:
+- **External Protection Circuit**: Always use appropriate current limiting and overcurrent protection
+- **MOSFET Rating**: Ensure discharge MOSFET can handle expected current loads
+- **Heat Management**: Provide adequate cooling for high-current discharge applications
+- **Backup Protection**: The 3.3V undervoltage cutoff is a software safety feature - consider hardware backup protection
+- **Testing**: Always test discharge control with low currents before high-power applications
+- **Emergency Stop**: Ensure manual disconnect capability independent of software control
+
+The undervoltage protection helps prevent cell damage, but proper hardware design is essential for safe operation.
 
 ## Protocol Details
 
