@@ -182,10 +182,14 @@ xgt_battery:
     name: "Parallel Cell Count"
     id: parallel_cells
 
-  # Register discovery. The whole scan (0x0316-0x0340, 0x0100-0x011E, 0x0040-0x0070) is
-  # logged at INFO every cycle, "*" marking values that changed since the last cycle.
-  # Best guesses for current: the unread gap between cell 10 (0x0314) and temperature
-  # (0x031A). Shown on screen where cell size / parallel count used to be.
+  # Register discovery (read-only), logged at INFO with "*" marking changed values:
+  #  - "hot" lines every cycle: short registers near the cells/temperatures and the tester's
+  #    unexplained reads, plus the long-frame reads tools (1302/1304) and chargers
+  #    (1201/1203/1205) make.
+  #  - "sweep" lines when a full sweep completes (~380 probes, sweep_per_cycle per cycle):
+  #    C0 0x0000-0x041E, DD 00-1F, single long params 12xx/13xx/18xx/21xx/31xx.
+  scan: true
+  sweep_per_cycle: 24
   registers:
     - address: 0x0316
       name: "Reg 0x0316"
@@ -198,11 +202,27 @@ xgt_battery:
     - address: 0x0318
       name: "Reg 0x0318"
       id: reg_0318
-      on_value:
-        then:
-          - lvgl.label.update:
-              id: label_parallel_count
-              text: !lambda 'return str_sprintf("18:%.0f", x);'
+
+  # Estimates from long param 0x120A, which looks like a charge counter in mA*s.
+  # Current = -dQ/dt between cycles (+ = discharge). Unverified until compared with a clamp meter.
+  counter_charge:
+    name: "Counter Charge"
+  counter_capacity:
+    name: "Counter Capacity"
+  counter_current:
+    name: "Counter Current"
+    id: counter_current
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: label_parallel_count
+            text: !lambda 'return str_sprintf("%.1fA", x);'
+  counter_power:
+    name: "Counter Power"
+  counter_energy:
+    name: "Counter Discharge Energy"
+  pack_soc:
+    name: "Pack SoC (1304)"
     
   # Cell voltages (all 10 cells)
   cell_voltage:
@@ -514,6 +534,6 @@ lvgl:
                     id: label_parallel_count
                     y: 54
                     x: 41
-                    text: "18:---"
+                    text: "-.-A"
  
     

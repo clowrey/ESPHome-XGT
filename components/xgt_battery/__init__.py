@@ -17,6 +17,13 @@ from esphome.const import (
     ICON_FLASH,
     ICON_CURRENT_AC,
     ENTITY_CATEGORY_DIAGNOSTIC,
+    DEVICE_CLASS_CURRENT,
+    DEVICE_CLASS_POWER,
+    DEVICE_CLASS_ENERGY,
+    STATE_CLASS_TOTAL_INCREASING,
+    UNIT_AMPERE,
+    UNIT_WATT,
+    UNIT_WATT_HOURS,
 )
 
 CODEOWNERS = ["@your-username"]
@@ -36,6 +43,13 @@ CONF_CELL_DIVERGENCE = "cell_divergence"
 CONF_REGISTERS = "registers"
 CONF_ADDRESS = "address"
 CONF_SCAN = "scan"
+CONF_SWEEP_PER_CYCLE = "sweep_per_cycle"
+CONF_COUNTER_CHARGE = "counter_charge"
+CONF_COUNTER_CAPACITY = "counter_capacity"
+CONF_COUNTER_CURRENT = "counter_current"
+CONF_COUNTER_POWER = "counter_power"
+CONF_COUNTER_ENERGY = "counter_energy"
+CONF_PACK_SOC = "pack_soc"
 
 REGISTER_SENSOR_SCHEMA = sensor.sensor_schema(
     accuracy_decimals=0,
@@ -163,6 +177,46 @@ CONFIG_SCHEMA = cv.All(
         # Register discovery: raw signed 16-bit values of unmapped registers
         cv.Optional(CONF_REGISTERS): cv.ensure_list(REGISTER_SENSOR_SCHEMA),
         cv.Optional(CONF_SCAN, default=True): cv.boolean,
+        cv.Optional(CONF_SWEEP_PER_CYCLE, default=24): cv.int_range(min=0, max=1000),
+
+        # Estimates from long-frame parameter 0x120A (charge counter in mA*s, unverified)
+        cv.Optional(CONF_COUNTER_CHARGE): sensor.sensor_schema(
+            unit_of_measurement="mAh",
+            accuracy_decimals=1,
+            state_class=STATE_CLASS_MEASUREMENT,
+            icon=ICON_BATTERY,
+        ),
+        cv.Optional(CONF_COUNTER_CAPACITY): sensor.sensor_schema(
+            unit_of_measurement="mAh",
+            accuracy_decimals=0,
+            state_class=STATE_CLASS_MEASUREMENT,
+            icon=ICON_BATTERY,
+            entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+        ),
+        cv.Optional(CONF_COUNTER_CURRENT): sensor.sensor_schema(
+            unit_of_measurement=UNIT_AMPERE,
+            accuracy_decimals=2,
+            device_class=DEVICE_CLASS_CURRENT,
+            state_class=STATE_CLASS_MEASUREMENT,
+        ),
+        cv.Optional(CONF_COUNTER_POWER): sensor.sensor_schema(
+            unit_of_measurement=UNIT_WATT,
+            accuracy_decimals=0,
+            device_class=DEVICE_CLASS_POWER,
+            state_class=STATE_CLASS_MEASUREMENT,
+        ),
+        cv.Optional(CONF_COUNTER_ENERGY): sensor.sensor_schema(
+            unit_of_measurement=UNIT_WATT_HOURS,
+            accuracy_decimals=2,
+            device_class=DEVICE_CLASS_ENERGY,
+            state_class=STATE_CLASS_TOTAL_INCREASING,
+        ),
+        cv.Optional(CONF_PACK_SOC): sensor.sensor_schema(
+            unit_of_measurement=UNIT_PERCENT,
+            accuracy_decimals=1,
+            device_class=DEVICE_CLASS_BATTERY,
+            state_class=STATE_CLASS_MEASUREMENT,
+        ),
     })
     .extend(cv.COMPONENT_SCHEMA)
     .extend(uart.UART_DEVICE_SCHEMA),
@@ -176,6 +230,19 @@ async def to_code(config):
     
     cg.add(var.set_update_interval(config[CONF_UPDATE_INTERVAL]))
     cg.add(var.set_scan_enabled(config[CONF_SCAN]))
+    cg.add(var.set_sweep_per_cycle(config[CONF_SWEEP_PER_CYCLE]))
+
+    for key, setter in (
+        (CONF_COUNTER_CHARGE, var.set_counter_charge_sensor),
+        (CONF_COUNTER_CAPACITY, var.set_counter_capacity_sensor),
+        (CONF_COUNTER_CURRENT, var.set_counter_current_sensor),
+        (CONF_COUNTER_POWER, var.set_counter_power_sensor),
+        (CONF_COUNTER_ENERGY, var.set_counter_energy_sensor),
+        (CONF_PACK_SOC, var.set_pack_soc_sensor),
+    ):
+        if key in config:
+            sens = await sensor.new_sensor(config[key])
+            cg.add(setter(sens))
 
     for reg in config.get(CONF_REGISTERS, []):
         sens = await sensor.new_sensor(reg)

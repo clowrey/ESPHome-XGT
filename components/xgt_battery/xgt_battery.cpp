@@ -51,79 +51,368 @@ const uint8_t XGTBattery::lookup_[16] = {
     0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf
 };
 
-// Unmapped registers next to the known ones (all known addresses are even, 16-bit wide):
-//   0x0300 pack V, 0x0302-0x0314 cells 1-10, 0x031A temperature  -> gap 0x0316/0x0318, then 0x031C+
-//   0x0108 charge %                                              -> 0x0100-0x011E
-//   0x0054 cycles, 0x0064 health                                 -> 0x0040-0x0070
+// ---------------------------------------------------------------------------------------------
+// Register discovery. Every probe is a READ; no write commands (1200/1204/1206/120C/1300/1306,
+// lockout or calibration resets) can be built here: long frames always carry the 0003 read tag.
+//
+// Sources for what is known (see README "Register discovery"):
+//   C0 0x0054 cycles, 0x0064 remaining mAh, 0x0108 charge, 0x0300 pack mV, 0x0302-0x0314 cells,
+//   0x031A/0x031C temperatures (dK), 0x0060 lockout flag, 0x00C0-C4 temperature histogram,
+//   0x00D8-DC current histogram; DD 04/08/0A pack info. Makita's tester also reads 0x0056,
+//   0x005A-0x005E, 0x006A, 0x0200 and DD 04 (decoded from the XGT Data sigrok capture).
+//   Long reads: 1201/1203/1205/120D (charger, w4 00CC), 1302/1304/1307 (tool, w4 000C),
+//   1813/1825 (tester, w4 00CB).
+// ---------------------------------------------------------------------------------------------
+
+// Addresses the fixed state machine already reads every cycle.
 static const uint16_t KNOWN_ADDRS[] = {0x0054, 0x0064, 0x0108, 0x0300, 0x0302, 0x0304, 0x0306, 0x0308,
                                        0x030A, 0x030C, 0x030E, 0x0310, 0x0312, 0x0314, 0x031A};
-static const uint16_t SCAN_RANGES[][2] = {{0x0316, 0x0340}, {0x0100, 0x011E}, {0x0040, 0x0070}};
+// Short registers read every cycle: the gap after the cells, the second temperature and its
+// neighbours, and the tester's unexplained reads. Live current is most likely among these.
+static const uint16_t HOT_C0[] = {0x0316, 0x0318, 0x031C, 0x031E, 0x0320, 0x0322, 0x0324, 0x0326, 0x0328,
+                                  0x0200, 0x0202, 0x0056, 0x0060, 0x006A, 0x00D8, 0x00DA, 0x00DC};
+// Short registers swept round-robin.
+static const uint16_t SWEEP_C0_RANGES[][2] = {
+    {0x0000, 0x00FE}, {0x0100, 0x013E}, {0x0200, 0x023E}, {0x0300, 0x033E}, {0x0400, 0x041E}};
+// Long single-parameter sweeps: {first param, last param, command, w4}. The command/w4 pairs are
+// ones seen reading that parameter family in captures.
+static const uint16_t SWEEP_LONG_RANGES[][4] = {
+    {0x1200, 0x121F, 0x1201, 0x00CC},  // charger family (0x120A = charge counter?)
+    {0x1300, 0x131F, 0x1304, 0x000C},  // tool family
+    {0x1800, 0x182F, 0x1825, 0x00CB},  // tester family
+    {0x2100, 0x210F, 0x1201, 0x00CC},  // values a charger writes (model, session id)
+    {0x3100, 0x310F, 0x1304, 0x000C},  // values a tool writes (tool model)
+};
 
 uint8_t XGTBattery::reverse_bits_(uint8_t b) { return (lookup_[b & 0x0F] << 4) | lookup_[b >> 4]; }
 
-// Short read frame, logical (LSB-first) bytes: CC crc C0 addrH addrL 00 00 33,
+// Short frame, logical (LSB-first) bytes: CC crc cmd a b 00 00 33,
 // crc = sum of the other seven bytes mod 256; every byte is bit-reversed on the wire.
-// Matches the fixed commands above, e.g. 0x0300 -> 33 43 03 C0 00 00 00 CC.
-void XGTBattery::make_read_cmd_(uint16_t address, uint8_t *cmd) {
-    uint8_t l[8] = {0xCC, 0x00, 0xC0, (uint8_t) (address >> 8), (uint8_t) (address & 0xFF), 0x00, 0x00, 0x33};
+// Matches the fixed commands above, e.g. C0 0x0300 -> 33 43 03 C0 00 00 00 CC.
+void XGTBattery::make_short_cmd_(uint8_t cmd, uint8_t a, uint8_t b, uint8_t *out) {
+    uint8_t l[8] = {0xCC, 0x00, cmd, a, b, 0x00, 0x00, 0x33};
     uint8_t sum = 0;
     for (uint8_t i = 0; i < 8; i++) {
         if (i != 1) sum += l[i];
     }
     l[1] = sum;
-    for (uint8_t i = 0; i < 8; i++) cmd[i] = reverse_bits_(l[i]);
+    for (uint8_t i = 0; i < 8; i++) out[i] = reverse_bits_(l[i]);
 }
 
 bool XGTBattery::read_register_(uint16_t address, int16_t *value) {
     uint8_t cmd[8];
-    this->make_read_cmd_(address, cmd);
+    this->make_short_cmd_(0xC0, address >> 8, address & 0xFF, cmd);
     int8_t err = this->send_battery(command_buffer_, cmd, 8, &rx_length_);
-    if (err != 0 || rx_length_ < 8) return false;
+    if (err != 0 || rx_length_ < 8 || command_buffer_[2] != 0xC0) return false;
     // Same decoding as pack voltage / cells: little-endian word in bytes 4-5.
     *value = (int16_t) ((command_buffer_[5] << 8) | command_buffer_[4]);
     return true;
 }
 
-void XGTBattery::log_scan_() {
-    // One line per 6 registers: "0316=   123*" (* = changed since the previous scan, ? = no answer)
-    std::string line;
-    for (size_t i = 0; i < scan_addrs_.size(); i++) {
-        char item[24];
-        if (scan_vals_[i] == INT32_MIN) {
-            snprintf(item, sizeof(item), "%04X=     ? ", scan_addrs_[i]);
-        } else {
-            bool changed = scan_have_prev_ && scan_prev_[i] != scan_vals_[i];
-            snprintf(item, sizeof(item), "%04X=%6d%c ", scan_addrs_[i], (int) scan_vals_[i], changed ? '*' : ' ');
+// Value sizes of long-frame parameters (replies don't carry them). From
+// paulofloresjunior/makita-battery-diagnostics-web xgt-catalog.js.
+int XGTBattery::long_param_len_(uint16_t id) {
+    switch (id) {
+        case 0x1202: case 0x130B: return 8;
+        case 0x1203: case 0x120A: case 0x120B: case 0x130E: return 4;
+        case 0x130C: return 1;
+        case 0x130F: return 46;
+        default:
+            if ((id >= 0x1201 && id <= 0x1210) || (id >= 0x1301 && id <= 0x1311)) return 2;
+            return -1;
+    }
+}
+
+// Finds a parameter in a long read reply block ("0001 0000" then id/value pairs, values big-endian).
+bool XGTBattery::find_long_param_(const std::vector<uint8_t> &val, uint16_t id, uint32_t *out) {
+    size_t o = 4;
+    while (o + 2 <= val.size()) {
+        uint16_t pid = (val[o] << 8) | val[o + 1];
+        int len = long_param_len_(pid);
+        if (len < 0 || o + 2 + len > val.size()) return false;
+        if (pid == id) {
+            uint32_t v = 0;
+            for (int k = 0; k < len && k < 4; k++) v = (v << 8) | val[o + 2 + k];
+            *out = v;
+            return true;
         }
-        line += item;
-        if ((i + 1) % 6 == 0 || i + 1 == scan_addrs_.size()) {
-            ESP_LOGI(TAG, "scan %s", line.c_str());
-            line.clear();
+        o += 2 + len;
+    }
+    return false;
+}
+
+// Long read: A5A5 | len | msgid | 4D4C | w4 | cmd | plen | 0003 count ids... | checksum | FF pad.
+// Checksum = 16-bit sum of every byte after A5A5 up to it. Bytes are bit-reversed on the wire.
+bool XGTBattery::read_long_(uint16_t cmd, uint16_t w4, const std::vector<uint16_t> &params,
+                            std::vector<uint8_t> &out) {
+    out.clear();
+    const size_t n = params.size();
+    const size_t plen = 4 + 2 * n;
+    const size_t used = 14 + plen + 2;
+    const size_t total = (used + 15) / 16 * 16;
+    uint8_t f[96];
+    if (n == 0 || total > sizeof(f) || total - 16 > 0xF0) return false;
+    memset(f, 0xFF, total);
+    msg_id_ = (msg_id_ + 1) & 0x0FFF;
+    const uint16_t id = 0x5000 | msg_id_;  // bit 14 = request, bit 12 always set
+    size_t i = 0;
+    f[i++] = 0xA5; f[i++] = 0xA5;
+    f[i++] = 0x00; f[i++] = (uint8_t) ((total - 16) | (total - used));
+    f[i++] = id >> 8; f[i++] = id & 0xFF;
+    f[i++] = 0x4D; f[i++] = 0x4C;
+    f[i++] = w4 >> 8; f[i++] = w4 & 0xFF;
+    f[i++] = cmd >> 8; f[i++] = cmd & 0xFF;
+    f[i++] = plen >> 8; f[i++] = plen & 0xFF;
+    f[i++] = 0x00; f[i++] = 0x03;  // read request tag
+    f[i++] = n >> 8; f[i++] = n & 0xFF;
+    for (uint16_t p : params) { f[i++] = p >> 8; f[i++] = p & 0xFF; }
+    uint16_t sum = 0;
+    for (size_t k = 2; k < i; k++) sum += f[k];
+    f[i++] = sum >> 8; f[i++] = sum & 0xFF;
+    for (size_t k = 0; k < total; k++) f[k] = reverse_bits_(f[k]);
+
+    this->write_array(f, total);
+    this->flush();
+    while (this->available()) this->read();  // drop echo / stale bytes
+
+    // Reply: wait up to 200 ms for the first byte, then read until the length word's total,
+    // giving up after a 40 ms gap.
+    size_t got = 0, want = sizeof(long_buf_);
+    uint32_t start = millis(), last = start;
+    while (got < want) {
+        uint32_t now = millis();
+        if (got == 0 ? now - start > 200 : now - last > 40) break;
+        if (!this->available()) { delay(1); continue; }
+        long_buf_[got] = reverse_bits_(this->read());
+        got++;
+        last = millis();
+        if (got == 4) {
+            if (long_buf_[0] != 0xA5 || long_buf_[1] != 0xA5) return false;
+            want = 16 + (long_buf_[3] & 0xF0);
+            if (want > sizeof(long_buf_)) return false;
         }
     }
-    ESP_LOGI(TAG, "scan --- pack %.2fV ---", pack_voltage_);
-    scan_prev_ = scan_vals_;
-    scan_have_prev_ = true;
+    if (got < 16 || got < want - (long_buf_[3] & 0x0F)) return false;
+    const uint8_t *r = long_buf_;
+    if (r[6] != 0x4D || r[7] != 0x4C) return false;
+    if (((r[4] << 8) | r[5]) != (id ^ 0xC000)) return false;  // same message id, response bit
+    const size_t rplen = (r[12] << 8) | r[13];
+    const size_t cs_at = 14 + rplen;
+    if (cs_at + 2 > got) return false;
+    uint16_t rsum = 0;
+    for (size_t k = 2; k < cs_at; k++) rsum += r[k];
+    if (rsum != ((r[cs_at] << 8) | r[cs_at + 1])) return false;
+    out.assign(r + 14, r + cs_at);
+    return true;
+}
+
+bool XGTBattery::run_probe_(Probe &p) {
+    std::vector<uint8_t> v;
+    bool ok = false;
+    if (p.kind == PROBE_C0) {
+        int16_t x;
+        ok = this->read_register_(p.addr, &x);
+        if (ok) v = {(uint8_t) (x & 0xFF), (uint8_t) (x >> 8)};
+    } else if (p.kind == PROBE_DD) {
+        uint8_t cmd[8];
+        this->make_short_cmd_(0xDD, (uint8_t) p.addr, 0x00, cmd);
+        int8_t err = this->send_battery(command_buffer_, cmd, 8, &rx_length_);
+        ok = err == 0 && rx_length_ >= 8 && command_buffer_[2] == 0xDD;
+        if (ok) v = {command_buffer_[4], command_buffer_[5], command_buffer_[6]};
+    } else {
+        ok = this->read_long_(p.addr, p.w4, p.params, v);
+    }
+    if (p.ok) {
+        p.prev = p.val;
+        p.had_prev = true;
+    }
+    p.ok = ok;
+    p.val = ok ? v : std::vector<uint8_t>{};
+    return ok;
+}
+
+std::string XGTBattery::format_probe_(const Probe &p, bool mark) const {
+    char buf[32];
+    std::string s;
+    if (p.kind == PROBE_C0) {
+        snprintf(buf, sizeof(buf), "%04X=", p.addr);
+    } else if (p.kind == PROBE_DD) {
+        snprintf(buf, sizeof(buf), "DD%02X=", p.addr);
+    } else if (p.params.size() == 1) {
+        snprintf(buf, sizeof(buf), "P%04X=", p.params[0]);
+    } else {
+        snprintf(buf, sizeof(buf), "L%04X/%04X:", p.addr, p.w4);
+    }
+    s = buf;
+    if (!p.ok) return s + "?";
+    const bool changed = mark && p.had_prev && p.prev != p.val;
+    if (p.kind == PROBE_C0) {
+        int16_t x = (int16_t) (p.val[0] | (p.val[1] << 8));
+        snprintf(buf, sizeof(buf), "%04X(%d)", (uint16_t) x, x);
+        s += buf;
+    } else if (p.kind == PROBE_DD) {
+        snprintf(buf, sizeof(buf), "%02X %02X %02X", p.val[0], p.val[1], p.val[2]);
+        s += buf;
+    } else if (p.params.size() == 1) {
+        // single parameter: everything after "0001 0000 <id>"
+        for (size_t k = p.val.size() >= 6 ? 6 : 0; k < p.val.size(); k++) {
+            snprintf(buf, sizeof(buf), "%02X", p.val[k]);
+            s += buf;
+        }
+        if (p.val.size() < 6) s += "(short)";
+    } else {
+        // multi-parameter: " id=value" pairs, unknown sizes dumped raw
+        size_t o = 4;
+        while (o + 2 <= p.val.size()) {
+            uint16_t pid = (p.val[o] << 8) | p.val[o + 1];
+            int len = long_param_len_(pid);
+            if (len < 0 || o + 2 + len > p.val.size()) break;
+            snprintf(buf, sizeof(buf), " %04X=", pid);
+            s += buf;
+            for (int k = 0; k < len; k++) {
+                snprintf(buf, sizeof(buf), "%02X", p.val[o + 2 + k]);
+                s += buf;
+            }
+            // mark the individual changed value
+            if (mark && p.had_prev && o + 2 + len <= p.prev.size() &&
+                memcmp(&p.val[o + 2], &p.prev[o + 2], len) != 0)
+                s += "*";
+            o += 2 + len;
+        }
+        if (o < p.val.size()) {
+            s += " raw:";
+            for (; o < p.val.size(); o++) {
+                snprintf(buf, sizeof(buf), "%02X", p.val[o]);
+                s += buf;
+            }
+        }
+        return s;
+    }
+    if (changed) s += "*";
+    return s;
+}
+
+void XGTBattery::log_probes_(const char *tag, std::vector<Probe> &list, size_t from, size_t to) {
+    std::string line;
+    int on_line = 0;
+    for (size_t i = from; i < to && i < list.size(); i++) {
+        const Probe &p = list[i];
+        std::string item = this->format_probe_(p, true);
+        // long probes get their own line; short ones 6 per line
+        bool own = p.kind == PROBE_LONG;
+        if (own || on_line == 6) {
+            if (!line.empty()) ESP_LOGI(TAG, "%s %s", tag, line.c_str());
+            line.clear();
+            on_line = 0;
+        }
+        if (own) {
+            ESP_LOGI(TAG, "%s %s", tag, item.c_str());
+            continue;
+        }
+        line += item + "  ";
+        on_line++;
+    }
+    if (!line.empty()) ESP_LOGI(TAG, "%s %s", tag, line.c_str());
+}
+
+void XGTBattery::build_probes_() {
+    auto known = [](uint16_t a) {
+        for (uint16_t k : KNOWN_ADDRS)
+            if (k == a) return true;
+        return false;
+    };
+    auto in_hot = [this](ProbeKind kind, uint16_t a) {
+        for (auto &p : hot_)
+            if (p.kind == kind && p.addr == a) return true;
+        return false;
+    };
+    auto add_c0 = [&](std::vector<Probe> &list, uint16_t a) {
+        if (known(a) || in_hot(PROBE_C0, a)) return;
+        for (auto &p : list)
+            if (p.kind == PROBE_C0 && p.addr == a) return;
+        Probe p;
+        p.kind = PROBE_C0;
+        p.addr = a;
+        p.w4 = 0;
+        list.push_back(p);
+    };
+    auto add_long = [](std::vector<Probe> &list, uint16_t cmd, uint16_t w4, std::vector<uint16_t> params) {
+        Probe p;
+        p.kind = PROBE_LONG;
+        p.addr = cmd;
+        p.w4 = w4;
+        p.params = std::move(params);
+        list.push_back(p);
+    };
+
+    // Hot: configured register sensors, the short list, then the long reads tools and chargers make.
+    for (auto &rs : register_sensors_) add_c0(hot_, rs.address);
+    for (uint16_t a : HOT_C0) add_c0(hot_, a);
+    // Exactly as captured (Malvineous README, issue #4 logs):
+    add_long(hot_, 0x1201, 0x00CC, {0x1201, 0x1202, 0x1203, 0x1205, 0x1206, 0x1207, 0x1208, 0x1209, 0x120A, 0x120B});
+    add_long(hot_, 0x1203, 0x00CC, {0x1204, 0x120C, 0x120D, 0x120E, 0x1210});
+    add_long(hot_, 0x1205, 0x00CC, {0x1201, 0x120D, 0x120F});
+    add_long(hot_, 0x1304, 0x000C, {0x1302, 0x1303, 0x1304, 0x1308, 0x1309, 0x130A, 0x1311});
+    add_long(hot_, 0x1302, 0x000C, {0x1301, 0x1306, 0x1307, 0x130C, 0x130D, 0x130E, 0x130F, 0x1310});
+
+    if (!scan_enabled_) return;
+    for (auto &r : SWEEP_C0_RANGES)
+        for (uint32_t a = r[0]; a <= r[1]; a += 2) add_c0(sweep_, a);
+    for (uint16_t arg = 0x00; arg <= 0x1F; arg++) {
+        Probe p;
+        p.kind = PROBE_DD;
+        p.addr = arg;
+        p.w4 = 0;
+        sweep_.push_back(p);
+    }
+    add_long(sweep_, 0x1307, 0x000C, {0x130B});  // battery model, as tools ask for it
+    for (auto &r : SWEEP_LONG_RANGES)
+        for (uint32_t id = r[0]; id <= r[1]; id++) add_long(sweep_, r[2], r[3], {(uint16_t) id});
+}
+
+// Charge counter estimate from the 1201 read (param 0x120A, mA*s) and capacity (0x1203, mA*s).
+void XGTBattery::update_counter_() {
+    const Probe *p1201 = nullptr, *p1304 = nullptr;
+    for (auto &p : hot_) {
+        if (p.kind != PROBE_LONG || !p.ok) continue;
+        if (p.addr == 0x1201) p1201 = &p;
+        if (p.addr == 0x1304) p1304 = &p;
+    }
+    uint32_t v;
+    if (p1304 != nullptr && pack_soc_sensor_ != nullptr && find_long_param_(p1304->val, 0x1304, &v))
+        pack_soc_sensor_->publish_state(v / 256.0f);
+    if (p1201 == nullptr) return;
+    if (find_long_param_(p1201->val, 0x1203, &v) && counter_capacity_sensor_ != nullptr)
+        counter_capacity_sensor_->publish_state(v / 3600.0f);
+    uint32_t q;
+    if (!find_long_param_(p1201->val, 0x120A, &q)) return;
+    const uint32_t now = millis();
+    if (counter_charge_sensor_ != nullptr) counter_charge_sensor_->publish_state(q / 3600.0f);
+    if (have_q_) {
+        const float dt = (now - q_ms_) / 1000.0f;
+        if (dt > 0.5f && dt < 120.0f) {
+            // mA*s per s = mA; positive = discharging
+            const float amps = ((int64_t) q_mas_ - (int64_t) q) / dt / 1000.0f;
+            const float watts = amps * pack_voltage_;
+            if (watts > 0) energy_wh_ += watts * dt / 3600.0f;
+            if (counter_current_sensor_ != nullptr) counter_current_sensor_->publish_state(amps);
+            if (counter_power_sensor_ != nullptr) counter_power_sensor_->publish_state(watts);
+            if (counter_energy_sensor_ != nullptr) counter_energy_sensor_->publish_state(energy_wh_);
+            ESP_LOGI(TAG, "ctr Q=%.1fmAh dQ=%ldmAs dt=%.2fs I=%.2fA P=%.0fW E=%.2fWh", q / 3600.0f,
+                     (long) ((int64_t) q_mas_ - (int64_t) q), dt, amps, watts, energy_wh_);
+        }
+    }
+    q_mas_ = q;
+    q_ms_ = now;
+    have_q_ = true;
 }
 
 void XGTBattery::setup() {
     ESP_LOGCONFIG(TAG, "Setting up XGT Battery...");
 
-    // Build the discovery list: configured register sensors first, then the scan ranges.
-    auto add_addr = [this](uint16_t a) {
-        for (uint16_t k : KNOWN_ADDRS)
-            if (k == a) return;
-        for (uint16_t s : scan_addrs_)
-            if (s == a) return;
-        scan_addrs_.push_back(a);
-    };
-    for (auto &rs : register_sensors_) add_addr(rs.address);
-    if (scan_enabled_) {
-        for (auto &r : SCAN_RANGES)
-            for (uint32_t a = r[0]; a <= r[1]; a += 2) add_addr(a);
-    }
-    scan_vals_.assign(scan_addrs_.size(), INT32_MIN);
-    scan_prev_.assign(scan_addrs_.size(), INT32_MIN);
+    this->build_probes_();
+    ESP_LOGCONFIG(TAG, "  Discovery: %u probes every cycle, %u in the sweep (%u per cycle)",
+                  (unsigned) hot_.size(), (unsigned) sweep_.size(), (unsigned) sweep_per_cycle_);
     
     // DEBUGGING: Test basic UART connectivity
     ESP_LOGV(TAG, "=== UART CONNECTIVITY TEST ===");
@@ -570,31 +859,55 @@ void XGTBattery::process_current_state() {
                     current_cell_++;
                     state_start_time_ = now;  // Reset timer for next cell
                 } else {
-                    current_state_ = scan_addrs_.empty() ? STATE_COMPLETE : STATE_SCAN;
-                    scan_index_ = 0;
+                    current_state_ = (hot_.empty() && sweep_.empty()) ? STATE_COMPLETE : STATE_SCAN;
+                    hot_index_ = 0;
+                    sweep_done_this_cycle_ = 0;
                     state_start_time_ = now;
                 }
             }
             break;
 
         case STATE_SCAN:
+            // One probe per tick: all hot probes, then sweep_per_cycle_ sweep probes.
             if (now - state_start_time_ >= 50) {
-                int16_t v;
-                scan_vals_[scan_index_] = this->read_register_(scan_addrs_[scan_index_], &v) ? v : INT32_MIN;
-                scan_index_++;
-                state_start_time_ = now;
-                if (scan_index_ >= scan_addrs_.size()) {
-                    this->log_scan_();
+                if (hot_index_ < hot_.size()) {
+                    this->run_probe_(hot_[hot_index_]);
+                    hot_index_++;
+                    if (hot_index_ == hot_.size()) {
+                        this->log_probes_("hot", hot_, 0, hot_.size());
+                        ESP_LOGI(TAG, "hot --- pack %.2fV ---", pack_voltage_);
+                        this->update_counter_();
+                    }
+                } else if (!sweep_.empty() && sweep_done_this_cycle_ < sweep_per_cycle_) {
+                    this->run_probe_(sweep_[sweep_pos_]);
+                    sweep_pos_++;
+                    sweep_done_this_cycle_++;
+                    if (sweep_pos_ >= sweep_.size()) {
+                        sweep_count_++;
+                        ESP_LOGI(TAG, "sweep #%u complete (%u probes, * = changed since sweep #%u):",
+                                 (unsigned) sweep_count_, (unsigned) sweep_.size(), (unsigned) sweep_count_ - 1);
+                        this->log_probes_("sweep", sweep_, 0, sweep_.size());
+                        std::string changed;
+                        for (auto &p : sweep_)
+                            if (p.ok && p.had_prev && p.prev != p.val) {
+                                std::string f = this->format_probe_(p, false);
+                                changed += f.substr(0, f.find_first_of("=:")) + " ";
+                            }
+                        ESP_LOGI(TAG, "sweep changed: %s", changed.empty() ? "(none)" : changed.c_str());
+                        sweep_pos_ = 0;
+                    }
+                } else {
                     current_state_ = STATE_COMPLETE;
                 }
+                state_start_time_ = now;
             }
             break;
 
         case STATE_COMPLETE:
             for (auto &rs : register_sensors_) {
-                for (size_t i = 0; i < scan_addrs_.size(); i++) {
-                    if (scan_addrs_[i] == rs.address && scan_vals_[i] != INT32_MIN) {
-                        rs.sensor->publish_state(scan_vals_[i]);
+                for (auto &p : hot_) {
+                    if (p.kind == PROBE_C0 && p.addr == rs.address && p.ok) {
+                        rs.sensor->publish_state((int16_t) (p.val[0] | (p.val[1] << 8)));
                     }
                 }
             }

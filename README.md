@@ -432,6 +432,52 @@ The component implements the proprietary Makita XGT communication protocol:
 - State machine for non-blocking operation
 - Support for up to 10 individual cell voltage readings
 
+## Register Discovery
+
+The pack's current reading has not been found yet. The component probes for it with reads
+only. It never sends the known write commands (1200, 1204, 1206, 120C, 1300, 1306) or the
+lockout and calibration resets. Every long frame it builds carries the `0003` read-request tag.
+
+- **Every cycle (`hot` log lines):**
+  - Short reads `0x0316`–`0x0328`, `0x0200`, `0x0202`, `0x0056`, `0x0060`, `0x006A`, `0x00D8`–`0x00DC`.
+  - The long reads that tools send (`1302`, `1304`), with the same parameter lists as in captures.
+  - The long reads that chargers send (`1201`, `1203`, `1205`), likewise.
+- **Sweep (`sweep` lines):** about 380 probes, `sweep_per_cycle` (default 24) per cycle. The full table is
+  logged when the sweep completes, and a `sweep changed:` line lists what differs from the previous sweep.
+  - Short C0 reads over `0x0000`–`0x041E`.
+  - DD reads with argument `00` to `1F`.
+  - Single long parameters `1200`–`121F`, `1300`–`131F`, `1800`–`182F`, `2100`–`210F` and `3100`–`310F`.
+- In both kinds of lines, `*` marks a value that changed and `?` an address that didn't answer.
+
+Known values, from Malvineous, Belik1982 and XGT Data, and from decoding the XGT Data tester capture:
+
+| Read | Meaning |
+|---|---|
+| C0 `0x0054` | Charge cycles |
+| C0 `0x0064` | Remaining capacity, mAh |
+| C0 `0x0108` | Charge, high byte ≈ % (formula uncertain) |
+| C0 `0x0300` | Pack mV. A separate reading, not the sum of the cells |
+| C0 `0x0302`–`0x0314` | Cells 1–10, mV |
+| C0 `0x031A`, `0x031C` | Temperatures, in 0.1 K |
+| C0 `0x0060` | Lockout flag |
+| C0 `0x00C0`–`0x00C4` | Temperature histogram |
+| C0 `0x00D8`–`0x00DC` | Current histogram |
+| DD `08` | Cell size |
+| DD `0A` | Parallel × series count |
+| Long `1202` / `130B` | Model name (ASCII, reversed) |
+| Long `1304` | State of charge in 1/256 %. Tools poll it while running |
+| Long `1308`, `1311` | Temperatures, in 0.1 K |
+| Long `1303` | Fault word: `0001` OK, `0040` fault (tool flashes red) |
+| Long `1203` | Capacity in mA·s. 14,400,000 = 4000 mAh |
+| Long `120A` | Probably the remaining charge counter in mA·s (unverified) |
+
+The `counter_*` sensors assume `120A` is a coulomb counter. They work out:
+- current as −ΔQ/Δt between cycles, positive when discharging;
+- power as that current × pack voltage;
+- discharge energy as a running total since boot.
+
+Check them against a clamp meter before trusting them.
+
 ## Performance Optimization
 
 - **Update Interval**: Default is 5 seconds. Increase for battery conservation
