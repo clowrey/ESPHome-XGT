@@ -16,6 +16,7 @@ esp32:
     type: esp-idf
 
 psram:
+  mode: quad  # Lolin S3 Mini Pro: ESP32-S3FH4R2, 2 MB quad PSRAM
 
 # Global variable to track discharge MOSFET state
 globals:
@@ -177,19 +178,31 @@ xgt_battery:
   cell_size:
     name: "Cell Capacity"
     id: cell_capacity
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: label_cell_capacity
-            text: !lambda 'return str_sprintf("%.0fmAh", x);'
   parallel_count:
     name: "Parallel Cell Count"
     id: parallel_cells
-    on_value:
-      then:
-        - lvgl.label.update:
-            id: label_parallel_count
-            text: !lambda 'return str_sprintf("%.0fP", x);'
+
+  # Register discovery. The whole scan (0x0316-0x0340, 0x0100-0x011E, 0x0040-0x0070) is
+  # logged at INFO every cycle, "*" marking values that changed since the last cycle.
+  # Best guesses for current: the unread gap between cell 10 (0x0314) and temperature
+  # (0x031A). Shown on screen where cell size / parallel count used to be.
+  registers:
+    - address: 0x0316
+      name: "Reg 0x0316"
+      id: reg_0316
+      on_value:
+        then:
+          - lvgl.label.update:
+              id: label_cell_capacity
+              text: !lambda 'return str_sprintf("16:%.0f", x);'
+    - address: 0x0318
+      name: "Reg 0x0318"
+      id: reg_0318
+      on_value:
+        then:
+          - lvgl.label.update:
+              id: label_parallel_count
+              text: !lambda 'return str_sprintf("18:%.0f", x);'
     
   # Cell voltages (all 10 cells)
   cell_voltage:
@@ -493,7 +506,7 @@ lvgl:
                     id: label_cell_capacity
                     y: 54
                     x: -21
-                    text: "---mAh"
+                    text: "16:---"
                     
                 # Parallel count - Right bottom
                 - label:
@@ -501,6 +514,6 @@ lvgl:
                     id: label_parallel_count
                     y: 54
                     x: 41
-                    text: "---P"
+                    text: "18:---"
  
     

@@ -33,6 +33,15 @@ CONF_CELL_VOLTAGE = "cell_voltage"
 CONF_MIN_CELL_VOLTAGE = "min_cell_voltage"
 CONF_MAX_CELL_VOLTAGE = "max_cell_voltage"
 CONF_CELL_DIVERGENCE = "cell_divergence"
+CONF_REGISTERS = "registers"
+CONF_ADDRESS = "address"
+CONF_SCAN = "scan"
+
+REGISTER_SENSOR_SCHEMA = sensor.sensor_schema(
+    accuracy_decimals=0,
+    state_class=STATE_CLASS_MEASUREMENT,
+    entity_category=ENTITY_CATEGORY_DIAGNOSTIC,
+).extend({cv.Required(CONF_ADDRESS): cv.hex_uint16_t})
 
 xgt_battery_ns = cg.esphome_ns.namespace("xgt_battery")
 XGTBattery = xgt_battery_ns.class_("XGTBattery", cg.Component, uart.UARTDevice)
@@ -150,6 +159,10 @@ CONFIG_SCHEMA = cv.All(
         
         # Cell voltages
         cv.Optional(CONF_CELL_VOLTAGE): CELL_VOLTAGE_SCHEMA,
+
+        # Register discovery: raw signed 16-bit values of unmapped registers
+        cv.Optional(CONF_REGISTERS): cv.ensure_list(REGISTER_SENSOR_SCHEMA),
+        cv.Optional(CONF_SCAN, default=True): cv.boolean,
     })
     .extend(cv.COMPONENT_SCHEMA)
     .extend(uart.UART_DEVICE_SCHEMA),
@@ -162,6 +175,11 @@ async def to_code(config):
     await uart.register_uart_device(var, config)
     
     cg.add(var.set_update_interval(config[CONF_UPDATE_INTERVAL]))
+    cg.add(var.set_scan_enabled(config[CONF_SCAN]))
+
+    for reg in config.get(CONF_REGISTERS, []):
+        sens = await sensor.new_sensor(reg)
+        cg.add(var.add_register_sensor(reg[CONF_ADDRESS], sens))
     
     # Configure main battery sensors
     if CONF_BATTERY_VOLTAGE in config:

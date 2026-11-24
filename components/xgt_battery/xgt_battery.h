@@ -5,6 +5,7 @@
 #include "esphome/components/uart/uart.h"
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
+#include <vector>
 
 namespace esphome {
 namespace xgt_battery {
@@ -37,7 +38,31 @@ class XGTBattery : public Component, public uart::UARTDevice {
 
   void set_update_interval(uint32_t update_interval) { update_interval_ = update_interval; }
 
+  // Unmapped-register discovery: publish one raw register (signed 16-bit) as a sensor.
+  // Its address is added to the scan list automatically.
+  void add_register_sensor(uint16_t address, sensor::Sensor *sensor) {
+    register_sensors_.push_back({address, sensor});
+  }
+  void set_scan_enabled(bool enabled) { scan_enabled_ = enabled; }
+
  protected:
+  struct RegisterSensor {
+    uint16_t address;
+    sensor::Sensor *sensor;
+  };
+  std::vector<RegisterSensor> register_sensors_;
+  bool scan_enabled_{true};
+  std::vector<uint16_t> scan_addrs_;
+  std::vector<int32_t> scan_vals_;       // INT32_MIN = no valid answer
+  std::vector<int32_t> scan_prev_;
+  size_t scan_index_{0};
+  bool scan_have_prev_{false};
+
+  static uint8_t reverse_bits_(uint8_t b);
+  void make_read_cmd_(uint16_t address, uint8_t *cmd);
+  bool read_register_(uint16_t address, int16_t *value);
+  void log_scan_();
+
   sensor::Sensor *battery_voltage_sensor_{nullptr};
   sensor::Sensor *battery_temperature_sensor_{nullptr};
   sensor::Sensor *battery_charge_sensor_{nullptr};
@@ -66,6 +91,7 @@ class XGTBattery : public Component, public uart::UARTDevice {
     STATE_TEMPERATURE,
     STATE_PACK_VOLTAGE,
     STATE_CELL_VOLTAGES,
+    STATE_SCAN,
     STATE_COMPLETE
   };
   

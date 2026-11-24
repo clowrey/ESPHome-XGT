@@ -3,6 +3,7 @@
 #include "esphome/core/hal.h"
 #include <string>
 #include <cstring>
+#include <climits>
 #include "driver/uart.h"
 
 namespace esphome {
@@ -50,8 +51,79 @@ const uint8_t XGTBattery::lookup_[16] = {
     0x1, 0x9, 0x5, 0xd, 0x3, 0xb, 0x7, 0xf
 };
 
+// Unmapped registers next to the known ones (all known addresses are even, 16-bit wide):
+//   0x0300 pack V, 0x0302-0x0314 cells 1-10, 0x031A temperature  -> gap 0x0316/0x0318, then 0x031C+
+//   0x0108 charge %                                              -> 0x0100-0x011E
+//   0x0054 cycles, 0x0064 health                                 -> 0x0040-0x0070
+static const uint16_t KNOWN_ADDRS[] = {0x0054, 0x0064, 0x0108, 0x0300, 0x0302, 0x0304, 0x0306, 0x0308,
+                                       0x030A, 0x030C, 0x030E, 0x0310, 0x0312, 0x0314, 0x031A};
+static const uint16_t SCAN_RANGES[][2] = {{0x0316, 0x0340}, {0x0100, 0x011E}, {0x0040, 0x0070}};
+
+uint8_t XGTBattery::reverse_bits_(uint8_t b) { return (lookup_[b & 0x0F] << 4) | lookup_[b >> 4]; }
+
+// Short read frame, logical (LSB-first) bytes: CC crc C0 addrH addrL 00 00 33,
+// crc = sum of the other seven bytes mod 256; every byte is bit-reversed on the wire.
+// Matches the fixed commands above, e.g. 0x0300 -> 33 43 03 C0 00 00 00 CC.
+void XGTBattery::make_read_cmd_(uint16_t address, uint8_t *cmd) {
+    uint8_t l[8] = {0xCC, 0x00, 0xC0, (uint8_t) (address >> 8), (uint8_t) (address & 0xFF), 0x00, 0x00, 0x33};
+    uint8_t sum = 0;
+    for (uint8_t i = 0; i < 8; i++) {
+        if (i != 1) sum += l[i];
+    }
+    l[1] = sum;
+    for (uint8_t i = 0; i < 8; i++) cmd[i] = reverse_bits_(l[i]);
+}
+
+bool XGTBattery::read_register_(uint16_t address, int16_t *value) {
+    uint8_t cmd[8];
+    this->make_read_cmd_(address, cmd);
+    int8_t err = this->send_battery(command_buffer_, cmd, 8, &rx_length_);
+    if (err != 0 || rx_length_ < 8) return false;
+    // Same decoding as pack voltage / cells: little-endian word in bytes 4-5.
+    *value = (int16_t) ((command_buffer_[5] << 8) | command_buffer_[4]);
+    return true;
+}
+
+void XGTBattery::log_scan_() {
+    // One line per 6 registers: "0316=   123*" (* = changed since the previous scan, ? = no answer)
+    std::string line;
+    for (size_t i = 0; i < scan_addrs_.size(); i++) {
+        char item[24];
+        if (scan_vals_[i] == INT32_MIN) {
+            snprintf(item, sizeof(item), "%04X=     ? ", scan_addrs_[i]);
+        } else {
+            bool changed = scan_have_prev_ && scan_prev_[i] != scan_vals_[i];
+            snprintf(item, sizeof(item), "%04X=%6d%c ", scan_addrs_[i], (int) scan_vals_[i], changed ? '*' : ' ');
+        }
+        line += item;
+        if ((i + 1) % 6 == 0 || i + 1 == scan_addrs_.size()) {
+            ESP_LOGI(TAG, "scan %s", line.c_str());
+            line.clear();
+        }
+    }
+    ESP_LOGI(TAG, "scan --- pack %.2fV ---", pack_voltage_);
+    scan_prev_ = scan_vals_;
+    scan_have_prev_ = true;
+}
+
 void XGTBattery::setup() {
     ESP_LOGCONFIG(TAG, "Setting up XGT Battery...");
+
+    // Build the discovery list: configured register sensors first, then the scan ranges.
+    auto add_addr = [this](uint16_t a) {
+        for (uint16_t k : KNOWN_ADDRS)
+            if (k == a) return;
+        for (uint16_t s : scan_addrs_)
+            if (s == a) return;
+        scan_addrs_.push_back(a);
+    };
+    for (auto &rs : register_sensors_) add_addr(rs.address);
+    if (scan_enabled_) {
+        for (auto &r : SCAN_RANGES)
+            for (uint32_t a = r[0]; a <= r[1]; a += 2) add_addr(a);
+    }
+    scan_vals_.assign(scan_addrs_.size(), INT32_MIN);
+    scan_prev_.assign(scan_addrs_.size(), INT32_MIN);
     
     // DEBUGGING: Test basic UART connectivity
     ESP_LOGV(TAG, "=== UART CONNECTIVITY TEST ===");
@@ -498,12 +570,34 @@ void XGTBattery::process_current_state() {
                     current_cell_++;
                     state_start_time_ = now;  // Reset timer for next cell
                 } else {
+                    current_state_ = scan_addrs_.empty() ? STATE_COMPLETE : STATE_SCAN;
+                    scan_index_ = 0;
+                    state_start_time_ = now;
+                }
+            }
+            break;
+
+        case STATE_SCAN:
+            if (now - state_start_time_ >= 50) {
+                int16_t v;
+                scan_vals_[scan_index_] = this->read_register_(scan_addrs_[scan_index_], &v) ? v : INT32_MIN;
+                scan_index_++;
+                state_start_time_ = now;
+                if (scan_index_ >= scan_addrs_.size()) {
+                    this->log_scan_();
                     current_state_ = STATE_COMPLETE;
                 }
             }
             break;
-            
+
         case STATE_COMPLETE:
+            for (auto &rs : register_sensors_) {
+                for (size_t i = 0; i < scan_addrs_.size(); i++) {
+                    if (scan_addrs_[i] == rs.address && scan_vals_[i] != INT32_MIN) {
+                        rs.sensor->publish_state(scan_vals_[i]);
+                    }
+                }
+            }
             this->publish_sensors();
             current_state_ = STATE_IDLE;
             this->last_update_ = now;
